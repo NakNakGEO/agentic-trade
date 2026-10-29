@@ -156,3 +156,14 @@ def test_the_account_update_closes_everything_when_the_account_is_wiped_out(worl
     world["prices"] = {"EURUSD": 0.001}
     runner.update(book, settings.ACCOUNTS["gemma_short"], now)
     assert book.positions == {} and book.closed[-1].reason == "Wiped out" and json.loads((runner.settings.book_path(None)).read_text())["closed"]
+
+
+def test_switches_can_be_set_in_the_env_file_and_a_variable_set_by_hand_wins(monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text("OPENAI_COMPATIBLE_API_KEY=not-a-switch\nAGENTIC_HEDGE_GEMMA_SHORT=on\nAGENTIC_MAX_PER_PAIR_GEMMA_SHORT=2\n", encoding="utf-8")
+    monkeypatch.setattr(settings.config, "ROOT", tmp_path)
+    monkeypatch.setenv("AGENTIC_MAX_PER_PAIR_GEMMA_SHORT", "3")
+    found = settings._switches()
+    assert found["AGENTIC_HEDGE_GEMMA_SHORT"] == "on" and found["AGENTIC_MAX_PER_PAIR_GEMMA_SHORT"] == "3"
+    assert "OPENAI_COMPATIBLE_API_KEY" not in found                       # a key is never read as a switch
+    accounts = settings.apply_overrides({"gemma_short": settings.ACCOUNTS["gemma_short"]}, found)
+    assert accounts["gemma_short"].hedge is True and accounts["gemma_short"].max_per_pair == 3

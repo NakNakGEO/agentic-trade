@@ -15,7 +15,7 @@ from paper_trade import config
 MAX_KEYS = 9
 
 
-def _env_file_values(path: Path) -> dict[str, str]:
+def env_file_values(path: Path) -> dict[str, str]:
     values = {}
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -32,7 +32,7 @@ def _env_file_values(path: Path) -> dict[str, str]:
 def load_keys(name: str, environ=None, env_file: Path | None = None) -> list[str]:
     """Every distinct non-empty key set for ``name``, ``name_2`` ... ``name_9``, in that order."""
     environ = os.environ if environ is None else environ
-    file_values = _env_file_values(env_file or config.ROOT / ".env")
+    file_values = env_file_values(env_file or config.ROOT / ".env")
     keys = []
     for variable in [name] + [f"{name}_{n}" for n in range(2, MAX_KEYS + 1)]:
         value = (environ.get(variable) or file_values.get(variable) or "").strip()

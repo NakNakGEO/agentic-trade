@@ -1,6 +1,6 @@
 # Switches
 
-Every new part is switched by an environment variable **per account**, set before the account's loop is started. Nothing here changes a running account until its loop is restarted with the variable set. `<ACCOUNT>` is `GEMMA_SHORT` or `QWEN_SHORT`.
+Every new part is switched by a variable **per account**. Put the lines in the `.env` file (the one that holds the API keys; it is never committed) or set them in the environment before the account's loop is started; a variable set by hand wins over `.env`. The loops read them when they start, so restart a loop after changing one. `<ACCOUNT>` is `GEMMA_SHORT` or `QWEN_SHORT`.
 
 | Variable | Default | What it does |
 |---|---|---|

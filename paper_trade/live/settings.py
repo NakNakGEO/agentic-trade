@@ -147,7 +147,15 @@ def apply_overrides(accounts: dict, environ) -> dict:
     return out
 
 
-ACCOUNTS = apply_overrides(ACCOUNTS, os.environ)
+def _switches() -> dict:
+    """The AGENTIC_* switches: the .env file's, then the process environment's on top (so a hand-set variable wins)."""
+    from paper_trade.live import keys
+
+    return {**{k: v for k, v in keys.env_file_values(config.ROOT / ".env").items() if k.startswith("AGENTIC_")},
+            **{k: v for k, v in os.environ.items() if k.startswith("AGENTIC_")}}
+
+
+ACCOUNTS = apply_overrides(ACCOUNTS, _switches())
 
 
 def book_path(account: Account) -> Path:
