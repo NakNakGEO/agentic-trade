@@ -133,24 +133,26 @@ def _free_key(book: Book, ticker: str) -> str:
     return ticker if number == 1 else f"{ticker}#{number}"
 
 
-def close_position(book: Book, ticker: str, price: float, when: str, reason: str) -> None:
+def close_position(book: Book, ticker: str, price: float, when: str, reason: str, friction=None) -> None:
     """Close every open trade on a pair by hand (for example when it leaves the live list)."""
     for pos in held(book, ticker):
-        _close(book, pos, price, when, reason)
+        _close(book, pos, price, when, reason, friction)
 
 
-def wipe_out(book: Book, prices: dict[str, float | None], when: str) -> bool:
+def wipe_out(book: Book, prices: dict[str, float | None], when: str, friction=None) -> bool:
     """When the account has fallen to zero or below, close every trade at its price: an account cannot trade on money it
     does not have. True when it did."""
     if not book.positions or equity(book, prices) > 0:
         return False
     for pos in list(book.positions.values()):
-        _close(book, pos, prices.get(pos.ticker) or pos.entry, when, "Wiped out")
+        _close(book, pos, prices.get(pos.ticker) or pos.entry, when, "Wiped out", friction)
     return True
 
 
-def _close(book: Book, pos: Position, price: float, when: str, reason: str) -> None:
-    gross = pos.side * qty(pos.ticker, price, pos.lot) * (price - pos.entry)
+def _close(book: Book, pos: Position, price: float, when: str, reason: str, friction=None) -> None:
+    if friction is not None:                             # slippage: the fill lands a little worse than the price
+        price = friction.out(pos.ticker, pos.side, price, reason)
+    gross =pos.side * qty(pos.ticker, price, pos.lot) * (price - pos.entry)
     fee = _fee(pos.ticker, price, pos.lot)
     book.realized += gross - fee
     book.closed.append(Closed(pos.ticker, pos.side, pos.entry, price, pos.opened_at, when, reason,
@@ -161,13 +163,13 @@ def _close(book: Book, pos: Position, price: float, when: str, reason: str) -> N
 def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float, daily_bars: list,
                    when: str, prices: dict[str, float | None], average_range: float | None = None,
                    style: settings.Style = settings.DAILY, slot: str = "", tweaks: Tweaks | None = None,
-                   policy: Policy | None = None) -> None:
+                   policy: Policy | None = None, friction=None) -> None:
     """Act on one new decision at the live ``price``. Every decision is acted on once, whatever came of it.
 
     ``average_range`` is the 14-bar range the stop is measured in (the daily one unless the style says otherwise).
     ``tweaks`` carries what an account chose to take from the agent's full answer (none: the usual rules).
     ``policy`` says how many trades a pair may hold, whether a call against one hedges it, and the open-risk cap
-    (none: the plain rules, see Policy)."""
+    (none: the plain rules, see Policy). ``friction`` adds slippage to the fills (none: fills at the price, see friction.py)."""
     policy = policy or Policy(risk_cap=rules.FIXED_LOT_MAX_TOTAL_RISK)
     key =f"{ticker}|{date}|{slot}" if slot else f"{ticker}|{date}"      # a round of calls adds its slot: one pair can have several a day
     if key in book.applied:
@@ -188,7 +190,9 @@ def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float
         return skip(f"the agent said to wait: {tweaks.hold}")
     if not policy.hedge:                                 # a call against the open trades closes them first
         for against in [p for p in mine if p.side != side]:
-            _close(book, against, price, when, "New call")
+            _close(book, against, price, when, "New call", friction)
+    if friction is not None:
+        price = friction.into(ticker, side, price)
     average_range = average_range or sizing.atr(daily_bars)
     if average_range is None:
         return skip("not enough price history to place a stop")
@@ -221,22 +225,22 @@ def _utc(stamp: str) -> pd.Timestamp:
     return moment.tz_convert("UTC").tz_localize(None) if moment.tzinfo else moment
 
 
-def step(book: Book, ticker: str, bars: pd.DataFrame) -> None:
+def step(book: Book, ticker: str, bars: pd.DataFrame, friction=None) -> None:
     """Close each open trade on the pair that a bar after its entry touched the stop or the target of (the stop wins a tie),
     or whose time limit has come (it closes at the open of the first bar at or after the limit)."""
     if bars is None or bars.empty:
         return
     for pos in held(book, ticker):
-        _step_one(book, pos, bars)
+        _step_one(book, pos, bars, friction)
 
 
-def _step_one(book: Book, pos: Position, bars: pd.DataFrame) -> None:
+def _step_one(book: Book, pos: Position, bars: pd.DataFrame, friction=None) -> None:
     opened = _utc(pos.opened_at)
     limit = _utc(pos.deadline) if pos.deadline else None
     for stamp, bar in bars[bars.index > opened].iterrows():
         high, low, first = float(bar["High"]), float(bar["Low"]), float(bar["Open"])
         if limit is not None and stamp >= limit:
-            _close(book, pos, first, pd.Timestamp(stamp).strftime("%Y-%m-%dT%H:%M:%S+00:00"), "Time limit")
+            _close(book, pos, first, pd.Timestamp(stamp).strftime("%Y-%m-%dT%H:%M:%S+00:00"), "Time limit", friction)
             return
         if pos.side > 0:
             hit_stop, hit_target = low <= pos.stop, high >= pos.target
@@ -246,7 +250,7 @@ def _step_one(book: Book, pos: Position, bars: pd.DataFrame) -> None:
             stop_price, target_price = max(pos.stop, first), min(pos.target, first)
         if hit_stop or hit_target:
             when = pd.Timestamp(stamp).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-            _close(book, pos, stop_price if hit_stop else target_price, when, "Stop-loss" if hit_stop else "Take-profit")
+            _close(book, pos, stop_price if hit_stop else target_price, when, "Stop-loss" if hit_stop else "Take-profit", friction)
             return
 
 

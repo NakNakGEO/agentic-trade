@@ -26,9 +26,9 @@ def variants(style) -> list[tuple[str, float, float, float]]:
     return out
 
 
-def run(trades: list[Trade], minutes: dict, style, equity: float) -> dict:
-    """Replay ``trades`` (minute candles by ticker) under every variant. A trade with no minutes recorded since it opened
-    cannot be replayed and is counted apart."""
+def run(trades: list[Trade], minutes: dict, style, equity: float, friction=None) -> dict:
+    """Replay ``trades`` (minute candles by ticker) under every variant, with the account's slippage if it has any. A trade
+    with no minutes recorded since it opened cannot be replayed and is counted apart."""
     import pandas as pd
 
     usable, skipped = [], 0
@@ -40,10 +40,10 @@ def run(trades: list[Trade], minutes: dict, style, equity: float) -> dict:
             continue
         usable.append((trade, frame))
     finished = [(t, f) for t, f in usable if t.reason]
-    wrong = [(t, why) for t, f in finished if (why := replay.differences(t, replay.as_traded(t, f, style.max_hours)))]
+    wrong = [(t, why) for t, f in finished if (why := replay.differences(t, replay.as_traded(t, f, style.max_hours, friction)))]
     rows = []
     for name, stop, reward, hours in variants(style):
-        results = [replay_trade(t, f, style, stop, reward, hours, equity) for t, f in usable]
+        results = [replay_trade(t, f, style, stop, reward, hours, equity, friction) for t, f in usable]
         pnl = [r.pnl for r in results]
         rows.append({"name": name, "trades": len(results), "open": sum(r.reason == "Open" for r in results),
                      "wins": sum(p > 0 for p in pnl), "total": round(sum(pnl), 2), "average": round(sum(pnl) / len(pnl), 2) if pnl else None,
@@ -56,8 +56,8 @@ def run(trades: list[Trade], minutes: dict, style, equity: float) -> dict:
 def for_account(account) -> dict:
     """The what-if of one live account, from its book and the recorded minutes."""
     from paper_trade.live import book as livebook
+    from paper_trade.live import friction, tradingview
     from paper_trade.live import settings as live
-    from paper_trade.live import tradingview
 
     book = livebook.load(live.book_path(account))
     trades, minutes = trades_of(book), {}
@@ -66,7 +66,7 @@ def for_account(account) -> dict:
             minutes[ticker] = tradingview.all_candles(ticker)
         except Exception:                             # no recorded minutes for this pair: its trades cannot be replayed
             continue
-    return run(trades, minutes, account.style, book.start_cash)
+    return run(trades, minutes, account.style, book.start_cash, friction.for_account(account))
 
 
 def render(result: dict, title: str = "") -> str:

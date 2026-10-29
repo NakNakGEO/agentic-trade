@@ -57,28 +57,29 @@ def _position(trade: Trade, stop: float, target: float, lot: float | None, hours
 
 
 def replay(trade: Trade, minutes: pd.DataFrame, style: live.Style, stop_mult: float, reward_risk: float, hours: float,
-           equity: float | None = None) -> Result:
+           equity: float | None = None, friction=None) -> Result:
     """The trade under another exit rule: stop ``stop_mult`` average ranges away, target ``reward_risk`` stops away, closed
     after ``hours``. The range is the one the live stop was placed with, so only the rule changes. Sized to the style's
-    risk share of ``equity`` (``None``: the lot the trade really had, for a replay of the trade as it was)."""
+    risk share of ``equity`` (``None``: the lot the trade really had, for a replay of the trade as it was). ``friction`` is the
+    account's slippage (none: fills at the price); the entry price of a trade already includes its entry slippage."""
     distance = abs(trade.entry - trade.stop) / style.stop_mult * stop_mult
     stop, target = trade.entry - trade.side * distance, trade.entry + trade.side * distance * reward_risk
     lot = trade.lot if equity is None else lb.lot_for(style, trade.ticker, trade.entry, distance, equity)
-    return _run(trade, minutes, _position(trade, stop, target, lot, hours))
+    return _run(trade, minutes, _position(trade, stop, target, lot, hours), friction)
 
 
-def as_traded(trade: Trade, minutes: pd.DataFrame, hours: float) -> Result:
+def as_traded(trade: Trade, minutes: pd.DataFrame, hours: float, friction=None) -> Result:
     """The trade with the exact stop, target and lot it had (to check the replay against what really happened)."""
-    return _run(trade, minutes, _position(trade, trade.stop, trade.target, trade.lot, hours))
+    return _run(trade, minutes, _position(trade, trade.stop, trade.target, trade.lot, hours), friction)
 
 
-def _run(trade: Trade, minutes: pd.DataFrame, position: lb.Position) -> Result:
+def _run(trade: Trade, minutes: pd.DataFrame, position: lb.Position, friction=None) -> Result:
     cut = pd.Timestamp(trade.closed_at).tz_convert("UTC").tz_localize(None) if trade.reason == "New call" else None
     window = minutes if cut is None else minutes[minutes.index < cut]
     book = lb.Book()
     book.positions[trade.ticker] = position
-    lb.step(book, trade.ticker, window)
-    if not book.closed and trade.reason == "New call":
+    lb.step(book, trade.ticker, window, friction)
+    if not book.closed and trade.reason == "New call":      # the call's own price is the fill the trade really got: no slippage on it again
         lb.close_position(book, trade.ticker, trade.exit, trade.closed_at, "New call")
     if book.closed:
         closed = book.closed[0]

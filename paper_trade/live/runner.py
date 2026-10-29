@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from paper_trade import assets, config
 from paper_trade.live import book as livebook
-from paper_trade.live import feeds, keys, plan, schedule, settings
+from paper_trade.live import feeds, friction, keys, plan, schedule, settings
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -58,6 +58,7 @@ def update(book: livebook.Book, account: settings.Account, now: datetime | None 
         feeds.record_minute(stamp)
         _record_day()
     prices = feeds.latest_prices(account.tickers)
+    slip = friction.for_account(account)            # None unless the account switched slippage on
     for decision in new_decisions(book, account):
         price = prices.get(decision.ticker) or prices.get(assets.canonical(decision.ticker))
         if price is None:                       # no price right now: leave it for the next cycle
@@ -69,10 +70,10 @@ def update(book: livebook.Book, account: settings.Account, now: datetime | None 
         tweaks = plan.tweaks_for(account.plan_options, decision.run, decision.ticker, decision.date, decision.rating)
         livebook.apply_decision(book, decision.ticker, decision.date, decision.rating, price,
                                 [] if hourly else feeds.daily_bars(decision.ticker), stamp, prices, average_range, account.style, decision.slot,
-                                tweaks, livebook.Policy(account.max_per_pair, account.hedge, account.risk_cap))
+                                tweaks, livebook.Policy(account.max_per_pair, account.hedge, account.risk_cap), slip)
     for ticker in {p.ticker for p in book.positions.values()}:
-        livebook.step(book, ticker, feeds.intraday_bars(ticker))
-    livebook.wipe_out(book, prices, stamp)
+        livebook.step(book, ticker, feeds.intraday_bars(ticker), slip)
+    livebook.wipe_out(book, prices, stamp, slip)
     value = livebook.record(book, prices, stamp)
     livebook.save(book, settings.book_path(account))
     return value

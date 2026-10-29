@@ -55,6 +55,11 @@ WAIT_PATTERN = (r"do not (?:enter|initiate|open|add)|don't (?:enter|initiate|ope
 LOT_STEP = 0.01                             # lots come in this step, and this is the smallest trade
 MAX_LOT = 1.0
 
+# Slippage, for accounts that switch it on (see friction.py): asset class -> (market order, stop-loss), in basis points of the
+# price. These are assumptions, not measured fills: about 0.2 and 0.5 pips on EURUSD, 3 and 12 cents on an ounce of gold,
+# and 1 and 3 basis points on crypto. Edit them here.
+SLIPPAGE_BPS = {"forex": (0.2, 0.5), "gold": (0.3, 1.0), "crypto": (1.0, 3.0)}
+
 
 @dataclass(frozen=True)
 class Style:
@@ -91,6 +96,7 @@ class Account:
     max_per_pair: int = 1                   # trades in the same direction one pair may hold at once
     hedge: bool = False                     # True: a call against an open trade opens the opposite trade too instead of closing it
     risk_cap: float | None = None           # most open risk as a share of the account; None: no limit (the account may be wiped out)
+    slippage: bool = False                  # True: fills land a little worse than the price, stops most of all (SLIPPAGE_BPS)
 
     @property
     def decisions_run(self) -> str:
@@ -114,7 +120,8 @@ def apply_overrides(accounts: dict, environ) -> dict:
     """The accounts with switches set from the environment, so a part can be turned on, and off again, without changing code:
     AGENTIC_CALL_EVERY_<ACCOUNT NAME>=<minutes> (0 or empty switches it off), AGENTIC_PLAN_<ACCOUNT NAME>=levels,wait,mild
     (any of the PLAN_OPTIONS; anything else is ignored), AGENTIC_MAX_PER_PAIR_<ACCOUNT NAME>=<trades per direction>,
-    AGENTIC_HEDGE_<ACCOUNT NAME>=on|off and AGENTIC_RISK_CAP_<ACCOUNT NAME>=<percent of the account>|off."""
+    AGENTIC_HEDGE_<ACCOUNT NAME>=on|off, AGENTIC_RISK_CAP_<ACCOUNT NAME>=<percent of the account>|off and
+    AGENTIC_SLIPPAGE_<ACCOUNT NAME>=on|off."""
     out = {}
     for name, account in accounts.items():
         def setting(prefix: str) -> str:
@@ -129,6 +136,8 @@ def apply_overrides(accounts: dict, environ) -> dict:
             account = dataclasses.replace(account, max_per_pair=int(setting("AGENTIC_MAX_PER_PAIR")))
         if setting("AGENTIC_HEDGE") in ("on", "off"):
             account = dataclasses.replace(account, hedge=setting("AGENTIC_HEDGE") == "on")
+        if setting("AGENTIC_SLIPPAGE") in ("on", "off"):
+            account = dataclasses.replace(account, slippage=setting("AGENTIC_SLIPPAGE") == "on")
         cap = setting("AGENTIC_RISK_CAP").rstrip("%")
         if cap == "off":
             account = dataclasses.replace(account, risk_cap=None)
