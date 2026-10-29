@@ -262,6 +262,7 @@ def build_state(run_id: str, mode: str = config.DEFAULT_MODE) -> dict:
         "running": bool(last_event and time.time() - last_event < RUNNING_IF_ACTIVE_WITHIN),
         "idle_seconds": idle,
         "cells_done": done_count, "cells_total": planned, "elapsed_seconds": elapsed, "round": round_now, "scorecard": score,
+        "pace": live_view.schedule.pace(account) if account is not None else None,      # is the model keeping up with its call interval
         "seconds_per_cell": seconds_per_cell, "classes": classes,
         "tokens": token_totals(feed_path(source)),
         "current_cell": feed[-1]["cell"] if feed else None,

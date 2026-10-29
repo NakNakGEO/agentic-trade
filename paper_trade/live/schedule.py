@@ -74,6 +74,28 @@ def round_state(run_id: str, tickers, started: datetime | None, now: datetime) -
     return "running" if now.timestamp() - newest < STALL_SECONDS else "over"
 
 
+def pace(account: settings.Account) -> dict | None:
+    """Is the model keeping up with its call interval? How long a finished round typically takes (the median of the last five),
+    how many grid slots were skipped because the model was still working, and whether rounds are slower than the interval.
+    None for an account without an interval or before any round was made."""
+    if not account.call_every_minutes:
+        return None
+    runs = slot_runs(account.decisions_run)
+    if not runs:
+        return None
+    seconds = []
+    for run in runs:
+        cells = eventlog.cells(feed_path(run))
+        if cells and logged_cells(run) >= len(account.tickers):                # only rounds that finished count
+            seconds.append(max(c["last"] for c in cells.values()) - min(c["first"] for c in cells.values()))
+    recent = sorted(seconds[-5:])
+    typical = recent[len(recent) // 2] if recent else None
+    slots = [datetime.strptime(slot_of(run), "%Y%m%d%H%M") for run in runs]
+    skipped = sum(max(0, round((later - earlier).total_seconds() / 60 / account.call_every_minutes) - 1) for earlier, later in zip(slots, slots[1:]))
+    return {"every": account.call_every_minutes, "typical": round(typical / 60) if typical else None, "rounds": len(runs),
+            "skipped": skipped, "too_slow": bool(typical and typical > account.call_every_minutes * 60)}
+
+
 def busy(account: settings.Account, last_slot: datetime | None, now: datetime, last_started: datetime | None = None) -> bool:
     """Is this account's latest round still working? ``last_started`` is when that round actually began (it can be later than
     its slot time when the round had to wait for the one before it); without it the slot time is used."""

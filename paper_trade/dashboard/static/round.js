@@ -12,11 +12,20 @@ function heading(r) {
   return '· ' + parts.join(' · ');
 }
 
+// How the call schedule is keeping up: the interval, how long a round really takes, and slots skipped because the model was still working.
+function paceText(p) {
+  if (!p) return '';
+  let text = ` Calls are made every ${p.every} minutes` + (p.typical ? `; a round takes about ${p.typical} minutes` : '') + '.';
+  if (p.skipped) text += ` ${p.skipped} ${p.skipped === 1 ? 'slot was' : 'slots were'} skipped because the last round was still working.`;
+  if (p.too_slow) text += ' A round takes longer than the interval, so rounds follow each other without a pause: raise the interval or use a faster model.';
+  return text;
+}
+
 export function renderRound(d) {
   const card = $('round'); if (!card) return;
   const r = d.round;
   card.style.display = r ? '' : 'none';
-  if (!r || !changed('round', r)) return;
+  if (!r || !changed('round', [r, d.pace])) return;
   $('roundNote').textContent = heading(r);
   const table = $('roundTable'); table.replaceChildren();
   table.append(el('tr', {}, ...['Pair', 'Status', 'The 11 agents, in order', 'Working on', 'Time', 'Tokens', 'The call'].map((h, i) =>
@@ -32,4 +41,5 @@ export function renderRound(d) {
   $('roundHow').textContent = r.parallel
     ? 'This model works on all the pairs at the same time, so every pair is "working" together and the whole round takes about as long as one pair.'
     : 'This model runs on your computer and does one pair at a time, so the pairs finish one after another.';
+  $('roundHow').textContent += paceText(d.pace);
 }

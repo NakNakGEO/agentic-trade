@@ -64,6 +64,25 @@ def test_a_round_is_running_until_every_pair_has_a_call_or_its_work_stalls(folde
     assert schedule.round_state(run, tickers, started, now) == "over"                                      # both pairs have their call
 
 
+def test_the_pace_shows_how_long_rounds_take_which_slots_were_skipped_and_whether_the_model_is_too_slow(folders, monkeypatch):
+    (folders / "backtest" / "live_gemma_s202610300630").mkdir()
+    account = dataclasses.replace(GEMMA, tickers=("EURUSD",))
+    assert schedule.pace(DAILY) is None and schedule.pace(dataclasses.replace(account, decisions_run_id="live_none")) is None   # no interval / no rounds yet
+    monkeypatch.setattr(schedule, "logged_cells", lambda run: 1)
+    base = 1_800_000_000
+    runs = ("live_gemma_s202610300030", "live_gemma_s202610300230", "live_gemma_s202610300630")
+    for run, minutes in zip(runs, (20, 30, 150)):
+        write_events(folders / "backtest" / run, "EURUSD 2026-10-30", [base, base + minutes * 60])
+    assert schedule.pace(account) == {"every": 120, "typical": 30, "rounds": 3, "skipped": 1, "too_slow": False}      # 02:30 -> 06:30 skipped the 04:30 slot
+    eventlog._logs.clear()
+    for run in runs:
+        write_events(folders / "backtest" / run, "EURUSD 2026-10-30", [base, base + 150 * 60])
+    slow = schedule.pace(account)
+    assert slow["typical"] == 150 and slow["too_slow"] is True
+    monkeypatch.setattr(schedule, "logged_cells", lambda run: 0)                                                       # unfinished rounds say nothing about speed
+    assert schedule.pace(account)["typical"] is None
+
+
 def test_a_round_that_started_late_gets_its_start_up_time_from_when_it_really_started(folders):
     """Found by a real round: the grace was counted from the slot time, so a round that had waited was judged over at once."""
     run, slot, began = "live_gemma_s202610291230", utc("2026-10-29T12:30"), utc("2026-10-29T13:28")
