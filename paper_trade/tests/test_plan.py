@@ -26,6 +26,17 @@ def test_a_condition_on_entering_is_found_in_the_summary_only():
     assert plan.wait_of(PLAIN) == "" and plan.wait_of(None) == ""        # "wait" after the thesis heading does not count
 
 
+def test_a_condition_about_the_other_direction_is_not_a_wait_on_this_call():
+    summary = lambda text: f"**Rating**: Underweight\n\n**Executive Summary**: {text}\n\n**Investment Thesis**: x"
+    other = summary("Short EURUSD now. Do not open a long at the current price. Do not flip to a long after a stop-out; wait for a fresh 4H signal.")
+    assert plan.wait_of(other, side=-1) == "" and plan.wait_of(other) != ""             # a short call: the long-side warnings do not count
+    assert plan.wait_of(summary("Do not add long exposure, do not open a short at the current price."), side=-1) != ""     # about this call's own side
+    assert plan.wait_of(summary("Short now, but do not enter until the print."), side=-1) != ""
+    assert plan.wait_of(summary("Buy now. Do not open a short at the current price."), side=1) == ""
+    assert plan.wait_of(summary("Do not open a long at 343.83, which sits above the sell-side trigger."), side=-1) == ""   # "sell-side" is not a direction
+    assert plan.wait_of(summary("Wait for a bounce in the long-term trend."), side=1) != ""                                # "long-term" is not a direction either
+
+
 @pytest.fixture
 def runs(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path)
