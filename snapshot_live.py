@@ -17,7 +17,7 @@ import pandas as pd
 from paper_trade import assets, config
 from paper_trade.decide import read_meta
 from paper_trade.live import book as lb
-from paper_trade.live import feeds, settings
+from paper_trade.live import feeds, schedule, settings
 from paper_trade.report import load_decisions
 from snapshot_positions import BLANK_CHART_ROW, CALL_WORDS, SIDE_WORDS, px
 from snapshot_run import feed_rows, model_usage
@@ -28,8 +28,29 @@ def _when(stamp: str) -> str:
     return stamp[:16].replace("T", " ") + " UTC"
 
 
-def pair_fields(mine: list, pos, closed: list, skipped: list, live: float | None) -> dict:
-    """One pair in plain words, from the live account."""
+def several_trades(positions: list, live: float | None) -> dict:
+    """The fields of a pair that holds more than one trade at once (stacked or hedged), in plain words."""
+    price = live or positions[0].entry
+    unrealized = sum(p.side * lb.qty(p.ticker, price, p.lot) * (price - p.entry) for p in positions)
+    longs = sum(p.side > 0 for p in positions)
+    net = sum(p.side for p in positions)
+    parts = [f"{SIDE_WORDS['long' if p.side > 0 else 'short']} at {px(p.entry)} (stop {px(p.stop)}, target {px(p.target)})" for p in positions]
+    return {"side": "long" if net > 0 else "short", "open_pnl": round(unrealized, 2), "open_trades": len(positions),
+            "fixed_text": f"{len(positions)} trades open on this pair ({longs} long, {len(positions) - longs} short): " + "; ".join(parts)
+                          + f". Profit or loss so far {unrealized:+.2f}.", "unrealized": unrealized, "cost": sum(p.cost for p in positions)}
+
+
+def pair_fields(mine: list, positions, closed: list, skipped: list, live: float | None) -> dict:
+    """One pair in plain words, from the live account. ``positions`` is every trade open on the pair (a list; one trade
+    may also be passed alone, or None when the pair holds none)."""
+    positions = [] if positions is None else positions if isinstance(positions, list) else [positions]
+    pos = positions[0] if len(positions) == 1 else None
+    if len(positions) > 1:
+        many = several_trades(positions, live)
+        out = pair_fields(mine, None, closed, skipped, live)
+        out.update(status="open", side=many["side"], open_pnl=many["open_pnl"], open_trades=many["open_trades"],
+                   pnl=many["unrealized"] - many["cost"] + sum(c.pnl for c in closed), fixed_state="holding", fixed_text=many["fixed_text"])
+        return out
     out = {"status": "waiting", "status_text": "Waiting for the first call", "side": "", "entry_price": None,
            "entry_date": "", "stop": None, "target": None, "last_price": live, "live_price": live, "open_pnl": 0.0,
            "closed_pnl": round(sum(c.pnl for c in closed), 2), "exit_reason": "", "exit_date": "", "exit_price": None,
@@ -85,12 +106,12 @@ def chart_rows(book: lb.Book, tickers) -> list[dict]:
     for ticker in tickers:
         bars = feeds.intraday_bars(ticker)
         trades = [(c.opened_at, c.closed_at) for c in book.closed if c.ticker == ticker]
-        pos = book.positions.get(ticker)
-        starts = [t[0] for t in trades] + ([pos.opened_at] if pos else [])
+        open_trades = lb.held(book, ticker)
+        starts = [t[0] for t in trades] + [p.opened_at for p in open_trades]
         window = CHART_MINUTES
         if starts:
             earliest = pd.Timestamp(min(starts)).tz_convert("UTC").tz_localize(None)
-            window = min(CHART_MAX_MINUTES, max(window, int((pd.Timestamp.utcnow().tz_localize(None) - earliest)
+            window = min(CHART_MAX_MINUTES, max(window, int((pd.Timestamp.now("UTC").tz_localize(None) - earliest)
                                                             .total_seconds() / 60) + 30))
         if bars is not None and not bars.empty:
             for stamp, bar in bars.iloc[-window:].iterrows():
@@ -103,7 +124,7 @@ def chart_rows(book: lb.Book, tickers) -> list[dict]:
                          "price": c.entry, "side": side, "label": c.rating})
             rows.append({**BLANK_CHART_ROW, "kind": "exit", "ticker": ticker, "date": _minute(c.closed_at),
                          "price": c.exit, "side": side, "label": c.reason, "pnl": round(c.pnl, 2)})
-        if pos:
+        for pos in open_trades:
             side = "long" if pos.side > 0 else "short"
             rows.append({**BLANK_CHART_ROW, "kind": "entry", "ticker": ticker, "date": _minute(pos.opened_at),
                          "price": pos.entry, "side": side, "label": pos.rating})
@@ -116,18 +137,21 @@ def chart_rows(book: lb.Book, tickers) -> list[dict]:
 def main(name: str, out: Path) -> None:
     account = settings.ACCOUNTS[LEGACY_NAMES.get(name, name)]
     book = lb.load(settings.book_path(account))
-    try:
-        decisions, _ = load_decisions(account.decisions_run)
-    except FileNotFoundError:
-        decisions = []
-    meta = read_meta(account.decisions_run) if decisions or (config.RUNS_DIR / "backtest" / account.decisions_run).exists() else {}
     tickers = list(account.tickers)
     mine = {assets.canonical(t) for t in tickers}
-    decisions = [d for d in decisions if assets.canonical(d.ticker) in mine]
+    by_run = {}
+    for run in schedule.all_runs(account):                  # the daily run, then each round's run (an account that calls often has many)
+        try:
+            by_run[run] = [d for d in load_decisions(run)[0] if assets.canonical(d.ticker) in mine]
+        except FileNotFoundError:
+            continue
+    newest = next(reversed(by_run), account.decisions_run)  # the run the page shows: its model feed, tokens and progress
+    decisions = [d for found in by_run.values() for d in found]
+    meta = read_meta(newest) if decisions or (config.RUNS_DIR / "backtest" / newest).exists() else {}
     live = feeds.latest_prices(tickers)
-    usage = model_usage(account.decisions_run)
-    latest_day = max((d.date for d in decisions), default="")
-    done_today = sum(1 for d in decisions if d.date == latest_day)
+    usage = model_usage(newest)
+    latest_day = max((d.date for d in by_run.get(newest, [])), default="")
+    done_today = sum(1 for d in by_run.get(newest, []) if d.date == latest_day)
     planned = len(tickers)                      # one call per pair per day
     started = datetime.fromisoformat(meta["started"]) if meta.get("started") else None
     elapsed = (datetime.now() - started).total_seconds() / 60 if started else 0.0
@@ -141,10 +165,11 @@ def main(name: str, out: Path) -> None:
     for ticker in tickers:
         key = assets.canonical(ticker)
         mine = sorted((d for d in decisions if assets.canonical(d.ticker) == key), key=lambda d: d.date)
-        pos = next((p for t, p in book.positions.items() if assets.canonical(t) == key), None)
+        positions = [p for p in book.positions.values() if assets.canonical(p.ticker) == key]
         closed = [c for c in book.closed if assets.canonical(c.ticker) == key]
         skipped = [s for s in book.skipped if assets.canonical(s["ticker"]) == key]
-        fields = pair_fields(mine, pos, closed, skipped, live.get(ticker))
+        fields = pair_fields(mine, positions, closed, skipped, live.get(ticker))
+        open_trades = fields.pop("open_trades", len(positions))
         wins, losses = sum(1 for c in closed if c.pnl > 0), sum(1 for c in closed if c.pnl < 0)
         rows.append({
             "ticker": ticker, "kind": assets.asset_class(ticker), "decisions": len(mine),
@@ -155,7 +180,7 @@ def main(name: str, out: Path) -> None:
             "run_done": done_today, "run_planned": planned, "run_calls": usage["calls"],
             "run_tokens_m": usage["tokens_m"], "run_errors": usage["errors"], "run_streams": 1 if loop_alive else 0,
             "run_elapsed_min": round(elapsed), "run_eta_min": eta, "run_model": meta.get("model", ""),
-            "run_updated": now, "run_start_cash": book.start_cash, **fields})
+            "run_updated": now, "run_start_cash": book.start_cash, "open_trades": open_trades, **fields})
 
     per_day = {}
     for point in book.history:
