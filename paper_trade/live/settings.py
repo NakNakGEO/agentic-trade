@@ -1,5 +1,7 @@
 """Live (forward) paper trading settings. Edit values here; the live modules hold no hardcoded numbers."""
 
+import dataclasses
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -72,6 +74,8 @@ class Account:
     tickers: tuple[str, ...] = TICKERS
     style: Style = DAILY
     decisions_run_id: str | None = None     # the run folder its decisions are written to and read from (default: run_id)
+    call_every_minutes: int | None = None   # None: one round of calls a day (the old behaviour); else a round on this clock grid
+    api_key_env: str | None = None          # the key variable of an online model; further keys are NAME_2, NAME_3 ... (see keys.py)
 
     @property
     def decisions_run(self) -> str:
@@ -87,8 +91,21 @@ ACCOUNTS = {
     "qwen_short": Account("qwen_short", "live_qwen_short", "short-term Qwen",
                           ("--provider", "openai_compatible", "--backend-url", "https://api.iteracompute.com/v1",
                            "--model", "qwen/qwen3.8-27b", "--effort", "medium", "--max-tokens", "8000"), parallel=True,
-                          tickers=SHORT_TICKERS, style=SHORT, decisions_run_id="live_qwen"),
+                          tickers=SHORT_TICKERS, style=SHORT, decisions_run_id="live_qwen", api_key_env="OPENAI_COMPATIBLE_API_KEY"),
 }
+
+
+def apply_overrides(accounts: dict, environ) -> dict:
+    """The accounts with any call interval set from the environment: AGENTIC_CALL_EVERY_<ACCOUNT NAME>=<minutes> (0 or empty
+    switches it off). This is how the call schedule is turned on, and off again, without changing any code."""
+    out = {}
+    for name, account in accounts.items():
+        value = (environ.get(f"AGENTIC_CALL_EVERY_{name.upper()}") or "").strip()
+        out[name] = dataclasses.replace(account, call_every_minutes=int(value) or None) if value.isdigit() else account
+    return out
+
+
+ACCOUNTS = apply_overrides(ACCOUNTS, os.environ)
 
 
 def book_path(account: Account) -> Path:

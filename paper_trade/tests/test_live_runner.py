@@ -98,7 +98,7 @@ def test_the_decision_command_is_built_from_the_account(monkeypatch, tmp_path):
 
 def test_a_local_model_gets_one_worker_and_a_hosted_model_one_per_pair(monkeypatch, tmp_path):
     workers = []
-    monkeypatch.setattr(runner, "_worker", lambda account, today, only: workers.append((account.name, only)))
+    monkeypatch.setattr(runner, "_worker", lambda account, today, only, run_id=None: workers.append((account.name, only)))
     monkeypatch.setattr(settings, "state_path", lambda account: tmp_path / account.name / "state.json")
     monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
 

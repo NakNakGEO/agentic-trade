@@ -118,11 +118,11 @@ def _close(book: Book, pos: Position, price: float, when: str, reason: str) -> N
 
 def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float, daily_bars: list,
                    when: str, prices: dict[str, float | None], average_range: float | None = None,
-                   style: settings.Style = settings.DAILY) -> None:
+                   style: settings.Style = settings.DAILY, slot: str = "") -> None:
     """Act on one new decision at the live ``price``. Every decision is acted on once, whatever came of it.
 
     ``average_range`` is the 14-bar range the stop is measured in (the daily one unless the style says otherwise)."""
-    key = f"{ticker}|{date}"
+    key = f"{ticker}|{date}|{slot}" if slot else f"{ticker}|{date}"      # a round of calls adds its slot: one pair can have several a day
     if key in book.applied:
         return
     book.applied.append(key)

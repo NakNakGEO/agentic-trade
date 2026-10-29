@@ -29,7 +29,9 @@ def for_account(account) -> dict | None:
     hit = _cache.get(account.name)
     if hit and time.time() - hit[0] < settings.CACHE_SECONDS:
         return hit[1]
-    calls = load_calls(account.decisions_run, account.tickers)
+    from paper_trade.live import schedule
+
+    calls = sorted((c for run in schedule.all_runs(account) for c in load_calls(run, account.tickers)), key=lambda c: c.at)
     result = grade(calls, _recorded_prices({c.ticker for c in calls})) if calls else None
     if result:
         result.update(model=account.label, run=account.decisions_run)

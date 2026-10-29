@@ -14,7 +14,7 @@ import pandas as pd
 from paper_trade import assets
 from paper_trade.bridge import settings as rules
 from paper_trade.live import book as lb
-from paper_trade.live import feeds, settings
+from paper_trade.live import feeds, schedule, settings
 from paper_trade.portfolio import PortfolioResult
 from paper_trade.simulator import SleeveResult, Trade
 
@@ -31,7 +31,10 @@ def source_run(run_id: str) -> str:
     """The run whose decision log, model feed and token counts the page shows for ``run_id``: an account that trades
     another account's calls shows that account's, since it has none of its own."""
     account = account_for(run_id)
-    return account.decisions_run if account else run_id
+    if account is None:
+        return run_id
+    rounds = schedule.slot_runs(account.decisions_run) if account.call_every_minutes else []
+    return rounds[-1] if rounds else account.decisions_run          # an account that calls often shows its newest round
 
 
 def _minute(stamp: str) -> str:

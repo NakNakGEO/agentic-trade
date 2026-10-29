@@ -7,6 +7,8 @@ from, so a Sell is argued as a short with its stop above the entry and the risk 
 
 from __future__ import annotations
 
+import os
+
 from paper_trade import config
 from paper_trade.bridge import settings as rules
 
@@ -33,9 +35,23 @@ def rules_text() -> str:
     )
 
 
+def memory_text(ticker: str) -> str:
+    """The model's own recent calls on this instrument, for a worker of a round-based account (named in AGENTIC_ACCOUNT)."""
+    from paper_trade.live import memory, settings
+
+    account = settings.ACCOUNTS.get(os.environ.get("AGENTIC_ACCOUNT", ""))
+    if account is None or not ticker:
+        return ""
+    try:
+        return memory.recent_calls_text(account, ticker)
+    except Exception:                         # a missing memory must never stop an agent run
+        return ""
+
+
 def with_rules(build):
-    """Wrap the framework's ``build_instrument_context`` so its text ends with the desk rules."""
+    """Wrap the framework's ``build_instrument_context`` so its text ends with the desk rules (and the account's recent calls)."""
     def build_with_rules(*args, **kwargs) -> str:
-        return build(*args, **kwargs) + rules_text()
+        ticker = kwargs.get("ticker") or (args[0] if args else "")
+        return build(*args, **kwargs) + rules_text() + memory_text(ticker)
     build_with_rules.__wrapped__ = build
     return build_with_rules
