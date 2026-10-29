@@ -77,3 +77,11 @@ def test_no_log_means_no_round_and_the_latest_day_is_the_one_shown(tmp_path):
     path = tmp_path / "events.jsonl"
     write(path, [{**llm("EURUSD", "Market Analyst", 100), "cell": "EURUSD 2026-10-29"}, llm("EURUSD", "Market Analyst", NOW - 5)])
     assert rounds.progress(path, [], ["EURUSD"], parallel=False, now=NOW)["day"] == DAY
+
+
+def test_a_round_lists_only_the_pairs_it_was_started_for():
+    account = ["EURUSD", "GBPUSD", "BTC-USD", "XAUUSD"]
+    assert rounds.pairs_of_round(account, ["GBPUSD"]) == ["GBPUSD"]                       # a one-pair test round: the rest were never asked
+    assert rounds.pairs_of_round(account, ["btc-usd", "EURUSD"]) == ["EURUSD", "BTC-USD"]    # the account's own order, spelling-proof
+    assert rounds.pairs_of_round(account, None) == account and rounds.pairs_of_round(account, []) == account     # no record: all of them
+    assert rounds.pairs_of_round(account, ["AAPL"]) == account                            # nothing in common: do not show an empty round

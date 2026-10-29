@@ -32,6 +32,13 @@ def _row(ticker: str, cell: dict | None, rating: str | None, now: float) -> dict
             "rating": rating, "started": time.strftime("%H:%M", time.gmtime(cell["first"])), "quiet": round(quiet)}
 
 
+def pairs_of_round(account_tickers, asked) -> list[str]:
+    """The pairs a round was started for: the account's pairs that the round's own record lists (a test round may ask about one
+    pair only, and the rest of the account's pairs are not 'waiting', they were never asked). All of them without a record."""
+    wanted = {assets.canonical(t) for t in asked or []}
+    return [t for t in account_tickers if assets.canonical(t) in wanted] or list(account_tickers)
+
+
 def progress(path: Path, decisions: list[dict], tickers, parallel: bool, now: float | None = None) -> dict | None:
     """The latest day's round: one row per pair, plus the round's elapsed time and a rough time left. None without a log."""
     now = now or time.time()

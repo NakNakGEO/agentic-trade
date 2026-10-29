@@ -249,7 +249,7 @@ def build_state(run_id: str, mode: str = config.DEFAULT_MODE) -> dict:
     score = None
     done_count = len(decisions)
     if account is not None:                  # a live account: the page shows today's round, not the run's whole life
-        round_now = rounds.progress(feed_path(source), decisions, account.tickers, account.parallel)
+        round_now = rounds.progress(feed_path(source), decisions, rounds.pairs_of_round(account.tickers, meta.get("tickers")), account.parallel)
         if round_now:
             done_count, planned = round_now["done"], round_now["total"]
         elapsed, seconds_per_cell = (round_now or {}).get("elapsed"), None
