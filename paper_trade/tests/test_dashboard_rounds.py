@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from paper_trade import eventlog
 from paper_trade.dashboard import rounds
 
 DAY = "2026-10-30"
@@ -68,7 +69,7 @@ def test_the_log_is_read_once_and_then_only_its_new_lines_and_a_half_line_waits(
         handle.write('lyst", "tokens_in": 10, "tokens_out": 5}\n')
     out = rounds.progress(path, [], ["EURUSD"], parallel=False, now=NOW)
     assert out["rows"][0]["steps"][:2] == ["done", "now"] and out["rows"][0]["tokens"] == 1000 + 15
-    assert rounds._logs[path]["offset"] == path.stat().st_size
+    assert eventlog._logs[path]["offset"] == path.stat().st_size
 
 
 def test_no_log_means_no_round_and_the_latest_day_is_the_one_shown(tmp_path):

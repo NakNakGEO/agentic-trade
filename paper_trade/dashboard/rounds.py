@@ -2,55 +2,19 @@
 
 Each pair is a team of 11 AI agents that work one after another (three analysts in any order, then the researchers, the
 manager, the trader, the three risk reviewers and the portfolio manager, who writes the call). A hosted model works on all
-pairs at once; a local one takes them one at a time. The log is read once and then only its new lines, because during a
-round it grows every few seconds.
+pairs at once; a local one takes them one at a time. The log itself is read by paper_trade.eventlog.
 """
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 
-from paper_trade import assets
+from paper_trade import assets, eventlog
 
 STAGES = ("Market Analyst", "News Analyst", "Fundamentals Analyst", "Bull Researcher", "Bear Researcher", "Research Manager",
           "Trader", "Aggressive Analyst", "Conservative Analyst", "Neutral Analyst", "Portfolio Manager")
 PAUSED_AFTER_SECONDS = 300          # a pair with no activity for this long, and no call yet, is shown as paused
-_logs: dict[Path, dict] = {}
-
-
-def _cells(path: Path) -> dict:
-    """{cell: {first, last, nodes, node, tokens}} for every pair-and-day in the log, reading only what is new."""
-    log = _logs.setdefault(path, {"offset": 0, "cells": {}})
-    try:
-        size = path.stat().st_size
-    except OSError:
-        return log["cells"]
-    if size < log["offset"]:                                       # the file was replaced: start again
-        log.update(offset=0, cells={})
-    with open(path, "rb") as handle:
-        handle.seek(log["offset"])
-        chunk = handle.read()
-    whole = chunk.rfind(b"\n") + 1                                 # a half-written last line waits for the next read
-    log["offset"] += whole
-    for line in chunk[:whole].decode("utf-8", errors="replace").splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        label = event.get("cell")
-        if not label or "t" not in event:
-            continue
-        cell = log["cells"].setdefault(label, {"first": event["t"], "last": event["t"], "nodes": [], "node": None, "tokens": 0})
-        cell["last"] = event["t"]
-        if event.get("kind") == "llm":
-            node = event.get("node")
-            if node in STAGES and node not in cell["nodes"]:
-                cell["nodes"].append(node)
-            cell["node"] = node
-            cell["tokens"] += (event.get("tokens_in") or 0) + (event.get("tokens_out") or 0)
-    return log["cells"]
 
 
 def _row(ticker: str, cell: dict | None, rating: str | None, now: float) -> dict:
@@ -71,7 +35,7 @@ def _row(ticker: str, cell: dict | None, rating: str | None, now: float) -> dict
 def progress(path: Path, decisions: list[dict], tickers, parallel: bool, now: float | None = None) -> dict | None:
     """The latest day's round: one row per pair, plus the round's elapsed time and a rough time left. None without a log."""
     now = now or time.time()
-    cells = _cells(path)
+    cells = eventlog.cells(path)
     days = {label.rsplit(" ", 1)[1] for label in cells if " " in label}
     if not days:
         return None
