@@ -36,7 +36,7 @@ def _parser() -> argparse.ArgumentParser:
                         help="keep thinking on at this effort level (the way to tune it on IteraCompute)")
     decide.add_argument("--data", choices=("tradingview",), default="tradingview",
                         help="market data for the models: TradingView live data with this system's own "
-                             "day-by-day record (the only choice; Yahoo is not used)")
+                             "day-by-day record (the only choice)")
     decide.add_argument("--no-thinking", action="store_true",
                         help="switch the model's hidden reasoning off (Qwen-style endpoints, Ollama); "
                              "saves tokens on a free allowance")
