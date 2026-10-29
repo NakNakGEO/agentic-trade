@@ -34,3 +34,21 @@ def test_folders_without_a_record_are_skipped_and_a_missing_root_is_empty(tmp_pa
     assert list_runs() == []
     _make_run(tmp_path, "no_meta_run", None, 3)
     assert list_runs() == []
+
+
+def test_an_account_that_calls_often_is_one_entry_with_its_newest_round_not_one_entry_per_round(tmp_path, monkeypatch):
+    import dataclasses
+
+    from paper_trade.live import settings
+
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path)
+    for slot, touched in (("202610290030", 1_000_000), ("202610290230", 2_000_000), ("202610290430", 3_000_000)):
+        _make_run(tmp_path, f"live_gemma_s{slot}", {"model": "ta-gemma12b", "tickers": ["EURUSD"], "dates": ["d1"]}, 1, touched)
+    _make_run(tmp_path, "other_replay", {"model": "x", "tickers": ["A"], "dates": ["d1"]}, 1, 500_000)
+    gemma = dataclasses.replace(settings.ACCOUNTS["gemma_short"], call_every_minutes=120)
+    monkeypatch.setattr(settings, "ACCOUNTS", {"gemma_short": gemma, "qwen_short": settings.ACCOUNTS["qwen_short"]})
+    runs = list_runs()
+    assert [r["run"] for r in runs] == ["live_gemma_short"] and runs[0]["last_active"] == 3_000_000        # the newest round stands for the account
+    assert runs[0]["planned"] == len(gemma.tickers)
+    monkeypatch.setattr(settings, "ACCOUNTS", {"gemma_short": settings.ACCOUNTS["gemma_short"]})          # the same folders without the interval switch
+    assert [r["run"] for r in list_runs()] == ["live_gemma_short"]

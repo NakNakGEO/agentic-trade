@@ -52,12 +52,15 @@ def list_runs() -> list[dict]:
 
     by_run = {r["run"]: r for r in rows}
     accounts = []                                # the live accounts: shown under their own names, and the only runs listed
+    from paper_trade.live import schedule
+
     for account in live.ACCOUNTS.values():
-        source = by_run.get(account.decisions_run)
-        if source:
+        rounds = [r for r in schedule.slot_runs(account.decisions_run) if r in by_run]     # an account that calls often has a run per round
+        shown = next((r for r in ([rounds[-1]] if account.call_every_minutes and rounds else []) + [account.decisions_run] + rounds[-1:] if r in by_run), None)
+        if shown:                                # one entry per account (its newest round), never one per round
             mine = {assets.canonical(t) for t in account.tickers}
-            made = sum(1 for d in read_decisions(memory_log(account.decisions_run)) if assets.canonical(d["ticker"]) in mine)
-            accounts.append({**source, "run": account.run_id, "decisions": made, "planned": len(account.tickers)})
+            made = sum(1 for d in read_decisions(memory_log(shown)) if assets.canonical(d["ticker"]) in mine)
+            accounts.append({**by_run[shown], "run": account.run_id, "decisions": made, "planned": len(account.tickers)})
     if accounts:
         return sorted(accounts, key=lambda r: -r["last_active"])
     return sorted(rows, key=lambda r: -r["last_active"])

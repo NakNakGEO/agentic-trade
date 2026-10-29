@@ -41,7 +41,11 @@ const mode = ['long_only', 'full_size', 'fixed_lot'].includes(params.get('mode')
 $('modePicker').value = mode;
 $('modePicker').addEventListener('change', e => { params.set('mode', e.target.value); location.search = params.toString(); });
 
+// The account rules (long only, long and short, ...) belong to the old replays: a live account always trades its own short-term rules, so the choice is hidden there.
+const hideAccountChoice = d => { $('modePicker').closest('label').style.display = d.blotter ? 'none' : ''; };
+
 function showAll(d) {
+  hideAccountChoice(d);
   renderTop(d); renderRound(d); renderScorecard(d); renderFeed(d); renderSystem(d); renderDecisions(d); renderPortfolio(d); renderBlotter(d); renderPicker(d);
 }
 
