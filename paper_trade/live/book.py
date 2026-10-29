@@ -46,6 +46,15 @@ class Tweaks:
     hold: str = ""              # the agent said to wait for a condition: why this call does not trade now
 
 
+@dataclass(frozen=True)
+class Policy:
+    """How many trades a pair may hold and how open risk is limited. Passing no policy to ``apply_decision`` means the plain
+    rules: one trade per pair, a call against it closes it, and open risk is capped as the bridge rules say."""
+    max_per_pair: int = 1                 # trades in the same direction one pair may hold at once
+    hedge: bool = False                   # True: a call against an open trade opens the opposite trade too, instead of closing it
+    risk_cap: float | None = None         # most open risk, as a share of the account (None: no limit)
+
+
 @dataclass
 class Closed:
     ticker: str
@@ -105,15 +114,39 @@ def outcomes(pos: Position) -> tuple[float, float]:
 def equity(book: Book, prices: dict[str, float | None]) -> float:
     """Start cash plus finished results plus the open positions valued at ``prices``."""
     total = book.start_cash + book.realized
-    for ticker, pos in book.positions.items():
-        price = prices.get(ticker) or pos.entry
-        total += pos.side * qty(ticker, price, pos.lot) * (price - pos.entry)
+    for pos in book.positions.values():
+        price = prices.get(pos.ticker) or pos.entry
+        total += pos.side * qty(pos.ticker, price, pos.lot) * (price - pos.entry)
     return total
 
 
+def held(book: Book, ticker: str) -> list[Position]:
+    """Every open trade on ``ticker``, oldest first (a pair can hold several)."""
+    return [p for p in book.positions.values() if p.ticker == ticker]
+
+
+def _free_key(book: Book, ticker: str) -> str:
+    """The key a new trade is kept under: the ticker for a pair's first trade, then TICKER#2, TICKER#3 ..."""
+    number = 1
+    while (ticker if number == 1 else f"{ticker}#{number}") in book.positions:
+        number += 1
+    return ticker if number == 1 else f"{ticker}#{number}"
+
+
 def close_position(book: Book, ticker: str, price: float, when: str, reason: str) -> None:
-    """Close an open position by hand (for example when a pair leaves the live list)."""
-    _close(book, book.positions[ticker], price, when, reason)
+    """Close every open trade on a pair by hand (for example when it leaves the live list)."""
+    for pos in held(book, ticker):
+        _close(book, pos, price, when, reason)
+
+
+def wipe_out(book: Book, prices: dict[str, float | None], when: str) -> bool:
+    """When the account has fallen to zero or below, close every trade at its price: an account cannot trade on money it
+    does not have. True when it did."""
+    if not book.positions or equity(book, prices) > 0:
+        return False
+    for pos in list(book.positions.values()):
+        _close(book, pos, prices.get(pos.ticker) or pos.entry, when, "Wiped out")
+    return True
 
 
 def _close(book: Book, pos: Position, price: float, when: str, reason: str) -> None:
@@ -122,25 +155,29 @@ def _close(book: Book, pos: Position, price: float, when: str, reason: str) -> N
     book.realized += gross - fee
     book.closed.append(Closed(pos.ticker, pos.side, pos.entry, price, pos.opened_at, when, reason,
                               round(gross - fee - pos.cost, 4), pos.decision_date, pos.rating, pos.lot, pos.stop, pos.target))
-    del book.positions[pos.ticker]
+    del book.positions[next(key for key, p in book.positions.items() if p is pos)]
 
 
 def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float, daily_bars: list,
                    when: str, prices: dict[str, float | None], average_range: float | None = None,
-                   style: settings.Style = settings.DAILY, slot: str = "", tweaks: Tweaks | None = None) -> None:
+                   style: settings.Style = settings.DAILY, slot: str = "", tweaks: Tweaks | None = None,
+                   policy: Policy | None = None) -> None:
     """Act on one new decision at the live ``price``. Every decision is acted on once, whatever came of it.
 
     ``average_range`` is the 14-bar range the stop is measured in (the daily one unless the style says otherwise).
-    ``tweaks`` carries what an account chose to take from the agent's full answer (none: the usual rules)."""
-    key = f"{ticker}|{date}|{slot}" if slot else f"{ticker}|{date}"      # a round of calls adds its slot: one pair can have several a day
+    ``tweaks`` carries what an account chose to take from the agent's full answer (none: the usual rules).
+    ``policy`` says how many trades a pair may hold, whether a call against one hedges it, and the open-risk cap
+    (none: the plain rules, see Policy)."""
+    policy = policy or Policy(risk_cap=rules.FIXED_LOT_MAX_TOTAL_RISK)
+    key =f"{ticker}|{date}|{slot}" if slot else f"{ticker}|{date}"      # a round of calls adds its slot: one pair can have several a day
     if key in book.applied:
         return
     book.applied.append(key)
     side = side_of(rating)
     if side == 0:
         return
-    held = book.positions.get(ticker)
-    if held and held.side == side:
+    mine = held(book, ticker)
+    if sum(p.side == side for p in mine) >= policy.max_per_pair:      # the pair already holds as many of this direction as it may
         return
 
     def skip(why: str) -> None:
@@ -149,8 +186,9 @@ def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float
     tweaks = tweaks or Tweaks()
     if tweaks.hold:                                      # the agent put a condition on this call: nothing changes now
         return skip(f"the agent said to wait: {tweaks.hold}")
-    if held:
-        _close(book, held, price, when, "New call")
+    if not policy.hedge:                                 # a call against the open trades closes them first
+        for against in [p for p in mine if p.side != side]:
+            _close(book, against, price, when, "New call")
     average_range = average_range or sizing.atr(daily_bars)
     if average_range is None:
         return skip("not enough price history to place a stop")
@@ -165,12 +203,14 @@ def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float
         notes.append("mild size")
     risk = distance * qty(ticker, price, lot)
     open_risk = sum(p.risk for p in book.positions.values())
-    if now_equity <= 0 or open_risk + risk > rules.FIXED_LOT_MAX_TOTAL_RISK * now_equity:
+    if now_equity <= 0:
+        return skip("the account is wiped out: there is no money left to trade")
+    if policy.risk_cap is not None and open_risk + risk > policy.risk_cap * now_equity:
         return skip(f"open-risk cap: this trade risks ${risk:,.2f} with ${open_risk:,.2f} already at risk")
     fee = _fee(ticker, price, lot)
     book.realized -= fee
     deadline = (datetime.fromisoformat(when) + timedelta(hours=style.max_hours)).isoformat(timespec="seconds") if style.max_hours else ""
-    book.positions[ticker] = Position(ticker, side, price, price - side * distance,
+    book.positions[_free_key(book, ticker)] = Position(ticker, side, price, price - side * distance,
                                       price + side * distance * (style.reward_risk or rules.REWARD_RISK), when, date, rating,
                                       risk, fee, lot, deadline, ", ".join(notes))
 
@@ -182,11 +222,15 @@ def _utc(stamp: str) -> pd.Timestamp:
 
 
 def step(book: Book, ticker: str, bars: pd.DataFrame) -> None:
-    """Close the position if a bar after its entry touched the stop or the target (the stop wins a tie), or if the
-    first bar at or after its time limit has opened (it closes there, at that open)."""
-    pos = book.positions.get(ticker)
-    if pos is None or bars is None or bars.empty:
+    """Close each open trade on the pair that a bar after its entry touched the stop or the target of (the stop wins a tie),
+    or whose time limit has come (it closes at the open of the first bar at or after the limit)."""
+    if bars is None or bars.empty:
         return
+    for pos in held(book, ticker):
+        _step_one(book, pos, bars)
+
+
+def _step_one(book: Book, pos: Position, bars: pd.DataFrame) -> None:
     opened = _utc(pos.opened_at)
     limit = _utc(pos.deadline) if pos.deadline else None
     for stamp, bar in bars[bars.index > opened].iterrows():

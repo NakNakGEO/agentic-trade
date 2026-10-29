@@ -88,6 +88,9 @@ class Account:
     call_every_minutes: int | None = None   # None: one round of calls a day (the old behaviour); else a round on this clock grid
     api_key_env: str | None = None          # the key variable of an online model; further keys are NAME_2, NAME_3 ... (see keys.py)
     plan_options: tuple[str, ...] = ()      # which parts of the agent's full answer the account uses (PLAN_OPTIONS); none: the rating only
+    max_per_pair: int = 1                   # trades in the same direction one pair may hold at once
+    hedge: bool = False                     # True: a call against an open trade opens the opposite trade too instead of closing it
+    risk_cap: float | None = None           # most open risk as a share of the account; None: no limit (the account may be wiped out)
 
     @property
     def decisions_run(self) -> str:
@@ -109,16 +112,28 @@ ACCOUNTS = {
 
 def apply_overrides(accounts: dict, environ) -> dict:
     """The accounts with switches set from the environment, so a part can be turned on, and off again, without changing code:
-    AGENTIC_CALL_EVERY_<ACCOUNT NAME>=<minutes> (0 or empty switches it off) and AGENTIC_PLAN_<ACCOUNT NAME>=levels,wait,mild
-    (any of the PLAN_OPTIONS; anything else is ignored)."""
+    AGENTIC_CALL_EVERY_<ACCOUNT NAME>=<minutes> (0 or empty switches it off), AGENTIC_PLAN_<ACCOUNT NAME>=levels,wait,mild
+    (any of the PLAN_OPTIONS; anything else is ignored), AGENTIC_MAX_PER_PAIR_<ACCOUNT NAME>=<trades per direction>,
+    AGENTIC_HEDGE_<ACCOUNT NAME>=on|off and AGENTIC_RISK_CAP_<ACCOUNT NAME>=<percent of the account>|off."""
     out = {}
     for name, account in accounts.items():
-        value = (environ.get(f"AGENTIC_CALL_EVERY_{name.upper()}") or "").strip()
-        if value.isdigit():
-            account = dataclasses.replace(account, call_every_minutes=int(value) or None)
-        chosen = (environ.get(f"AGENTIC_PLAN_{name.upper()}") or "").replace(" ", "").lower().split(",")
+        def setting(prefix: str) -> str:
+            return (environ.get(f"{prefix}_{name.upper()}") or "").strip().lower()
+
+        if setting("AGENTIC_CALL_EVERY").isdigit():
+            account = dataclasses.replace(account, call_every_minutes=int(setting("AGENTIC_CALL_EVERY")) or None)
+        chosen = setting("AGENTIC_PLAN").replace(" ", "").split(",")
         if any(option in PLAN_OPTIONS for option in chosen):
             account = dataclasses.replace(account, plan_options=tuple(o for o in PLAN_OPTIONS if o in chosen))
+        if setting("AGENTIC_MAX_PER_PAIR").isdigit() and int(setting("AGENTIC_MAX_PER_PAIR")) >= 1:
+            account = dataclasses.replace(account, max_per_pair=int(setting("AGENTIC_MAX_PER_PAIR")))
+        if setting("AGENTIC_HEDGE") in ("on", "off"):
+            account = dataclasses.replace(account, hedge=setting("AGENTIC_HEDGE") == "on")
+        cap = setting("AGENTIC_RISK_CAP").rstrip("%")
+        if cap == "off":
+            account = dataclasses.replace(account, risk_cap=None)
+        elif cap.replace(".", "", 1).isdigit() and float(cap) > 0:
+            account = dataclasses.replace(account, risk_cap=float(cap) / 100)
         out[name] = account
     return out
 

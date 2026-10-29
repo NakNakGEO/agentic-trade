@@ -68,9 +68,11 @@ def update(book: livebook.Book, account: settings.Account, now: datetime | None 
             continue
         tweaks = plan.tweaks_for(account.plan_options, decision.run, decision.ticker, decision.date, decision.rating)
         livebook.apply_decision(book, decision.ticker, decision.date, decision.rating, price,
-                                [] if hourly else feeds.daily_bars(decision.ticker), stamp, prices, average_range, account.style, decision.slot, tweaks)
-    for ticker in list(book.positions):
+                                [] if hourly else feeds.daily_bars(decision.ticker), stamp, prices, average_range, account.style, decision.slot,
+                                tweaks, livebook.Policy(account.max_per_pair, account.hedge, account.risk_cap))
+    for ticker in {p.ticker for p in book.positions.values()}:
         livebook.step(book, ticker, feeds.intraday_bars(ticker))
+    livebook.wipe_out(book, prices, stamp)
     value = livebook.record(book, prices, stamp)
     livebook.save(book, settings.book_path(account))
     return value
