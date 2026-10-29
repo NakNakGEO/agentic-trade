@@ -71,12 +71,13 @@ paper_trade/            everything built here (Python package)
   tvdata/               gives the agents TradingView data in the form they expect, plus our desk rules
   daybook/              our own day-by-day record
   fundamentals/ news/   extra data sources for the agents
+  scorecard/ whatif/    are the calls right (graded against the price) and would other exits have paid more
   dashboard/            the local web page: server, state, orders panel, round progress, static files
   bridge/               a separate, demo-only MetaTrader 5 connector (manual use; the live accounts never use it)
   tests/                the pytest suite
 tvmcp/                  a small helper that talks to TradingView, run in its own Python environment
 TradingAgents/          the original agent framework (git submodule, pinned, never edited)
-docs/                   audit and plan
+docs/                   audit and plan, releasing and rolling back, the list of switches (SWITCHES.md)
 snapshot_*.py watch_*.py *.ps1   helper scripts for the phone monitors and launching
 ```
 
