@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from paper_trade import assets
+from paper_trade import assets, config
 from paper_trade.live import settings, tv_guard
 
 CREATE_NO_WINDOW = 0x08000000
@@ -33,7 +33,10 @@ def enabled() -> bool:
 def snapshot(tickers=None) -> dict:
     """{ticker: {"m1": {...}, "d1": {...}}} for the mapped tickers.
 
-    One snapshot file is shared by every live loop, so TradingView is asked at most once per TV_CACHE_SECONDS."""
+    One snapshot file is shared by every live loop, so TradingView is asked at most once per TV_CACHE_SECONDS.
+    A read-only (test) copy only reads that file and never asks TradingView."""
+    if config.READ_ONLY_DATA:
+        return _read_only_snapshot()
     if _cache["data"] is not None and time.time() - _cache["at"] < settings.TV_CACHE_SECONDS:
         return _cache["data"]
     shared = settings.TV_SNAPSHOT_PATH
@@ -63,6 +66,17 @@ def snapshot(tickers=None) -> dict:
     shared.write_text(json.dumps(data), encoding="utf-8")
     _cache.update(at=time.time(), data=data)
     return data
+
+
+def _read_only_snapshot() -> dict:
+    path = settings.TV_SNAPSHOT_PATH
+    try:
+        age = time.time() - path.stat().st_mtime
+    except OSError:
+        raise RuntimeError("read-only data mode: the live system has not written a TradingView snapshot yet") from None
+    if age > settings.READ_ONLY_MAX_AGE_SECONDS:
+        raise RuntimeError(f"read-only data mode: the live snapshot is {age:.0f} s old (is the live loop running?)")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def last_snapshot() -> dict | None:
@@ -125,7 +139,10 @@ def record_minute(stamp: str) -> None:
 
     A snapshot carries the minute that has just finished and the one forming now. Both are saved under their own minute,
     so a finished minute replaces the partial copy saved while it was forming (the last record of a minute wins), and a
-    record identical to one already saved (another loop sharing the snapshot, or a market that is closed) is not repeated."""
+    record identical to one already saved (another loop sharing the snapshot, or a market that is closed) is not repeated.
+    A read-only (test) copy records nothing."""
+    if config.READ_ONLY_DATA:
+        return
     settings.TV_CANDLE_DIR.mkdir(parents=True, exist_ok=True)
     data = snapshot()
     fetched = data.get("fetched_at") or stamp

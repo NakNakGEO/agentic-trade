@@ -1,10 +1,18 @@
 """Paper-trade settings. Edit values here; logic modules hold no hardcoded numbers."""
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "runs"
 CACHE_DIR = ROOT / "cache"
+
+# A test copy sets AGENTIC_LIVE_DATA_DIR to the live system's runs folder. It then READS the live prices, minute candles,
+# daily record and TradingView caches from there and never records or fetches any of it (docs/RELEASING.md).
+LIVE_DATA_DIR = os.environ.get("AGENTIC_LIVE_DATA_DIR") or None
+READ_ONLY_DATA = LIVE_DATA_DIR is not None
+DATA_DIR = Path(LIVE_DATA_DIR) if READ_ONLY_DATA else RUNS_DIR
+ALLOW_TEST_ROUNDS = os.environ.get("AGENTIC_ALLOW_TEST_ROUNDS") == "1"     # a test copy only starts model calls when told to
 
 # Local Ollama model with a raised context window (see Modelfile notes in the README).
 LLM_SETTINGS = {

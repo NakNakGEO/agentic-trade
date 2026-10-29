@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from paper_trade import config
 from paper_trade.daybook import settings, store
 
 BAR_KEYS = set(settings.BAR_FIELDS) | {"change", "change_abs", "time"}
@@ -37,6 +38,8 @@ def _day(ticker: str, fetched: str, bar_time) -> str:
 
 def from_analysis(reply: dict) -> int:
     """Store each instrument's daily bar and daily indicators from one ``tvdata.client.analysis()`` reply."""
+    if config.READ_ONLY_DATA:
+        return 0
     fetched = reply.get("fetched_at") or datetime.now(timezone.utc).isoformat(timespec="seconds")
     written = 0
     for ticker, frames in (reply.get("analysis") or {}).items():
@@ -62,6 +65,8 @@ def from_analysis(reply: dict) -> int:
 
 def from_minute(snapshot: dict) -> int:
     """Keep each instrument's row current from one ``live.tradingview.snapshot()`` (its 1-minute candles)."""
+    if config.READ_ONLY_DATA:
+        return 0
     fetched = snapshot.get("fetched_at") or datetime.now(timezone.utc).isoformat(timespec="seconds")
     written = 0
     for ticker, live in (snapshot.get("symbols") or {}).items():

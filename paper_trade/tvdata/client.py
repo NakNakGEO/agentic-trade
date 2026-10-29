@@ -16,7 +16,7 @@ from paper_trade.live import tv_guard
 
 CREATE_NO_WINDOW = 0x08000000
 ENGINE_FEED = config.ROOT / "tvmcp" / "engine_feed.py"
-CACHE_DIR = config.RUNS_DIR / "live" / "tv_cache"
+CACHE_DIR = live.TV_CACHE_DIR
 ANALYSIS_SECONDS = 15 * 60
 INTERVALS = ("1h", "4h", "1d", "1W")
 TIMEOUT_SECONDS = 180
@@ -39,6 +39,10 @@ def _run(request: dict) -> dict:
 def _cached(name: str, seconds: int, fetch) -> dict:
     """A shared cached reply; when a refresh fails (or TradingView is cooling down) the last reply is used."""
     path = CACHE_DIR / f"{name}.json"
+    if config.READ_ONLY_DATA:                # a test copy only reads what the live system fetched, however old
+        if not path.exists():
+            raise RuntimeError(f"read-only data mode: the live system has no '{name}' reply yet")
+        return json.loads(path.read_text(encoding="utf-8"))
     if path.exists() and time.time() - path.stat().st_mtime < seconds:
         return json.loads(path.read_text(encoding="utf-8"))
     try:

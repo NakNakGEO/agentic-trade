@@ -45,8 +45,9 @@ def update(book: livebook.Book, account: settings.Account, now: datetime | None 
     if not book.created:
         book.created = stamp
         _skip_old_calls(book, account, now.strftime("%Y-%m-%d"))
-    feeds.record_minute(stamp)
-    _record_day()
+    if not config.READ_ONLY_DATA:               # a test copy never records: the live loops do
+        feeds.record_minute(stamp)
+        _record_day()
     prices = feeds.latest_prices(account.tickers)
     for decision in new_decisions(book, account):
         price = prices.get(decision.ticker) or prices.get(assets.canonical(decision.ticker))
@@ -128,7 +129,7 @@ def loop(account: settings.Account) -> None:
     book = livebook.load(settings.book_path(account))
     while True:
         now = _now()
-        if decisions_due(account, now):
+        if decisions_due(account, now) and (not config.READ_ONLY_DATA or config.ALLOW_TEST_ROUNDS):
             start_decisions(account, now)
         try:
             update(book, account, now)

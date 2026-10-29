@@ -22,11 +22,13 @@ TV_SYMBOLS = {
     "AAPL": "NASDAQ:AAPL|america", "NVDA": "NASDAQ:NVDA|america", "MSFT": "NASDAQ:MSFT|america",
 }
 TV_RECORD_EXTRA = {"SPY": "AMEX:SPY|america"}  # recorded for scoring decisions against SPY, never traded
-TV_CANDLE_DIR = config.RUNS_DIR / "live" / "tv_candles"
+TV_CANDLE_DIR = config.DATA_DIR / "live" / "tv_candles"
 TV_CANDLES_KEEP = 9000                      # recorded lines read back per pair (about three a minute: two days)
-TV_SNAPSHOT_PATH = config.RUNS_DIR / "live" / "tv_snapshot.json"   # shared by both live loops and the dashboard
+TV_SNAPSHOT_PATH = config.DATA_DIR / "live" / "tv_snapshot.json"   # shared by both live loops and the dashboard
+TV_CACHE_DIR = config.DATA_DIR / "live" / "tv_cache"                # the shared analysis and screener replies
+READ_ONLY_MAX_AGE_SECONDS = 600             # read-only copies treat a snapshot older than this as missing
 TV_CACHE_SECONDS = 55                       # TradingView is asked at most about once a minute (faster got us refused)
-TV_COOLDOWN_PATH = config.RUNS_DIR / "live" / "tv_cooldown.txt"    # shared pause after TradingView refuses
+TV_COOLDOWN_PATH = config.DATA_DIR / "live" / "tv_cooldown.txt"    # shared pause after TradingView refuses
 TV_COOLDOWN_SECONDS = 30                    # first pause; it doubles for each refusal in a row
 TV_COOLDOWN_MAX_SECONDS = 300
 TV_TIMEOUT_SECONDS = 150                  # includes waiting for the shared gate (tvmcp/gate.py) while another fetch runs
