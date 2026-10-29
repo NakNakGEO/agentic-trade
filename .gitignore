@@ -1,0 +1,29 @@
+# --- secrets and local settings: never published ---
+.env
+.env.*
+!.env.example
+.claude/
+
+# --- data the running system produces (large, personal, rebuilt by running it) ---
+runs/
+logs/
+cache/
+reports/
+
+# --- environments and caches ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+tvmcp/.venv/
+tvmcp/recent/
+
+# --- other projects that happen to live in this folder ---
+freellmapi/
+start-freellmapi.ps1
+
+# --- scratch ---
+*.bak
+*.tmp

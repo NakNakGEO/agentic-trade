@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Charts</title>
+<link rel="stylesheet" href="/static/charts.css">
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"
+        integrity="sha384-OK7vELvjHdhUFi31JYioPIcRHTROLdcDa6ZsNWgvgLaKj+9JqhU0Ad8g4wz3CXjA" crossorigin="anonymous"></script>
+</head>
+<body data-view="tv">
+<header class="top">
+  <a class="brand" href="/" title="Back to the main dashboard: agents, token use, decisions, portfolio">&larr; Dashboard</a>
+  <nav id="symbols" class="symbols" aria-label="Instruments"></nav>
+</header>
+<section class="bar">
+  <div class="quote">
+    <span id="sym" class="sym">-</span>
+    <span id="price" class="price">-</span>
+    <span id="chg" class="chg"></span>
+  </div>
+  <nav id="views" class="frames" aria-label="Chart view">
+    <button data-view="tv" class="on" title="TradingView's own live chart">TradingView chart</button>
+    <button data-view="ours" title="Our recorded prices, with every open trade's entry, stop and target">Our trades and levels</button>
+  </nav>
+  <nav id="frames" class="frames" aria-label="Timeframe"></nav>
+  <span id="fresh" class="fresh" title="When TradingView was last asked for prices">-</span>
+</section>
+<div class="layout">
+  <div class="chartbox">
+    <div id="legend" class="legend"></div>
+    <div id="chart" class="chart"></div>
+    <div id="note" class="note" hidden></div>
+    <div id="tvbox" class="tvfull"></div>
+  </div>
+  <aside class="side">
+    <h2>Open trades on this instrument</h2>
+    <div id="positions" class="cards"></div>
+    <h2>Trade history on this instrument</h2>
+    <div id="trades" class="list"></div>
+    <p class="foot">TradingView chart: TradingView's own live chart, shown as TradingView shows it to your browser.
+      Our trades and levels: TradingView prices recorded by this system about once a minute (no outside history).
+      Lines: <b class="l-entry">entry</b>, <b class="l-stop">stop loss</b>, <b class="l-target">take profit</b>.
+      Arrows: a trade opened (up = buy/long, down = sell/short); a dot = a trade closed.</p>
+  </aside>
+</div>
+<script src="/static/charts.js"></script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Trading Live</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<main>
+<header>
+  <h1>Paper Trading Live <span id="run" class="sub"></span></h1>
+  <a href="/charts" class="pill on" style="text-decoration:none" title="TradingView-style live candlestick charts with every open trade's entry, stop and target">Live charts</a>
+  <label style="display:flex;gap:8px;align-items:center;color:var(--mute);font-size:13px">Run
+    <select id="runPicker" title="Pick which run to look at. Newest activity is first."></select></label>
+  <label style="display:flex;gap:8px;align-items:center;color:var(--mute);font-size:13px">Account
+    <select id="modePicker" title="The same decisions, traded under different rules. Long and short lets a Sell or Underweight open a short trade that profits when the price falls.">
+      <option value="long_short">Long and short</option><option value="full_size">Long and short, full size</option><option value="fixed_lot">Fixed lot with stops (like the MT5 demo)</option><option value="long_only">Long only</option></select></label>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <span id="lag" class="pill" style="display:none" title="How long the model's most recent reply took. Green under 5 s, orange 5-30 s, red 30 s or more."></span>
+    <span id="status" class="pill">connecting</span>
+    <span id="live" class="pill" title="Whether this page is receiving live updates from the server, and how fresh the last one is.">● connecting...</span>
+  </div>
+</header>
+
+<div class="card">
+  <div class="bar"><i id="progress" style="width:0"></i></div>
+  <div class="row"><span id="progressText">-</span><span id="eta"></span></div>
+  <div class="stages" id="stages"></div>
+</div>
+
+<div class="card" id="round" style="display:none">
+  <h2>Today's calls <span id="roundNote" class="plain"></span></h2>
+  <div class="scroll"><table id="roundTable"></table></div>
+  <p class="note" style="margin-top:8px">A call is the AI's answer for one pair: buy, sell or hold. Each pair is handled by a team of 11 AI agents, one after another: three analysts (prices, news, company and economy data), a bull and a bear researcher, a research manager, a trader, three risk reviewers, and a portfolio manager who writes the call. Each square is one agent: green has finished, blue is working now. <span id="roundHow"></span> Hover a square for the agent's name.</p>
+</div>
+
+<div class="card">
+  <h2>Live agent feed <span id="nowLine" class="plain"></span></h2>
+  <div class="toolbar">
+    <label><input type="checkbox" id="showTools" checked> show tool calls</label>
+    <span>newest on top, messages shown in full</span>
+  </div>
+  <div id="feed"></div>
+</div>
+
+<div class="card"><h2>Model and tokens</h2><div id="system" class="sys"></div></div>
+
+<div class="card">
+  <h2>Market now <span id="marketClock" class="plain"></span></h2>
+  <div class="grid g4" id="market"></div>
+  <p class="note" style="margin-top:8px">TradingView prices, asked about once a minute and shared by both accounts. If TradingView asks us to slow down, the last quote stays on screen with its age. The two live accounts trade these prices in real time with paper money.</p>
+</div>
+
+<div class="card">
+  <h2>How it traded, on the price chart</h2>
+  <div class="picker" id="picker"></div>
+  <h2 style="margin-top:14px">TradingView live chart <span class="plain">TradingView's own chart, 1 minute candles: it moves in real time</span></h2>
+  <div id="tvChart" class="tvbox">Loading TradingView chart...</div>
+  <h2 style="margin-top:14px">Our record of the same prices, with trades</h2>
+  <div id="chartSummary" class="note" style="margin:6px 0 8px"></div>
+  <div id="tradeChart"></div>
+  <div class="legend">
+    <span><i style="background:var(--accent)"></i>buy (opens a long)</span><span><i style="background:var(--under)"></i>short (opens a short)</span>
+    <span><i style="background:var(--good)"></i>closed trade that won</span><span><i style="background:var(--bad)"></i>closed trade that lost</span>
+    <span><i style="background:transparent;border:2px solid var(--mute);border-radius:50%"></i>decision made (fills at the next close)</span>
+    <span><i style="background:var(--accent);opacity:.6"></i>long share of this asset's $ slice</span><span><i style="background:var(--under);opacity:.7"></i>short share</span>
+  </div>
+  <p class="note" style="margin:8px 0 12px">Candles are 1 minute for the live accounts. All times on this page are UTC (check the offset from your own clock). A dashed line joins where each trade was opened (average entry) to where it was closed: green if it won, red if it lost, dotted for a position still open. A long closes by selling, a short closes by buying back (covering). Hover anything for details.</p>
+  <h2>Trade record for this asset</h2>
+  <div id="tradeLog"></div>
+</div>
+
+<div class="card"><h2>Decisions (what each model decided, per asset per date)</h2>
+  <p class="note" style="margin:0 0 10px"><b>BUY</b> opens a long trade (profits if the price rises). <b>SELL</b> opens a short trade (profits if the price falls).
+  <b>NO TRADE</b> / <b>KEEP OPEN</b> is the model's Hold: it does nothing. It does not mean waiting to buy or sell. With no trade open nothing is opened; with a trade open it stays open until its stop-loss or take-profit is hit.
+  "Mild" calls (Overweight, Underweight) count as BUY and SELL in the fixed-lot account. A faded BUY or SELL marked <b>not opened</b> was a real call that the account could not take: with a fixed 0.01 lot some trades risk more than the account&#39;s risk limit allows (gold and BTC always do on a $100 account). Hover a box for the exact numbers.</p><div class="scroll"><div id="decisions"></div></div></div>
+
+<div class="card">
+  <h2>Paper portfolio <span id="modeNote" class="plain"></span></h2>
+  <div class="grid g3" id="tiles"></div>
+  <div id="chart"></div>
+  <div class="legend"><span><i style="background:var(--accent)"></i>TradingAgents</span><span><i style="background:var(--mute)"></i>SPY buy and hold</span><span><i style="background:var(--under)"></i>Same assets, buy and hold</span></div>
+  <div class="scroll" style="margin-top:12px"><table id="tickers"></table></div>
+</div>
+
+<div class="card" id="blotter" style="display:none">
+  <h2>Orders and trades <span class="plain">laid out like TradingView's trading panel, one row per trade</span></h2>
+  <div id="blotterTabs"></div>
+  <div id="blotterBody"></div>
+  <p class="note" style="margin-top:8px">Every trade is opened by one order and closed by another, so a trade that has finished shows two orders. When a call flips (for example Buy to Sell), the Sell that closes the old long and the Sell that opens the new short happen together, so they look alike: "Opens #9" and "Closes #5" tell them apart. While a trade is open its row shows what it makes at its take profit and loses at its stop loss.</p>
+</div>
+
+<p class="note">Paper money only: nothing here is connected to an exchange or broker. Fractional units, no leverage, 5 bps cost per trade, and short trades pay no borrow fee here (which flatters them a little). A trade wins when closing it made money after fees against the average entry price. A few weeks of decisions cannot show whether this system has an edge. Not financial advice.</p>
+</main>
+<script type="module" src="/static/main.js"></script>
+</body>
+</html>
