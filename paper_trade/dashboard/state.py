@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import pandas as pd
 
-from paper_trade import assets, config
+from paper_trade import assets, config, scorecard
 from paper_trade.bridge import settings as rules
 from paper_trade.dashboard import rounds, sysinfo
 from paper_trade.decide import feed_path, memory_log, read_meta, run_dir
@@ -246,17 +246,22 @@ def build_state(run_id: str, mode: str = config.DEFAULT_MODE) -> dict:
     if system["local"]:                      # GPU and local-model readings only make sense for a local run
         system.update(gpu=sysinfo.gpu_stats(), ollama=sysinfo.ollama_stats(_log_start))
     round_now = None
+    score = None
     done_count = len(decisions)
     if account is not None:                  # a live account: the page shows today's round, not the run's whole life
         round_now = rounds.progress(feed_path(source), decisions, account.tickers, account.parallel)
         if round_now:
             done_count, planned = round_now["done"], round_now["total"]
         elapsed, seconds_per_cell = (round_now or {}).get("elapsed"), None
+        try:
+            score = scorecard.for_account(account)
+        except Exception:                    # the scorecard is extra: a problem in it must never blank the page
+            score = None
     return {
         "run_id": run_id, "meta": meta, "now": time.time(),
         "running": bool(last_event and time.time() - last_event < RUNNING_IF_ACTIVE_WITHIN),
         "idle_seconds": idle,
-        "cells_done": done_count, "cells_total": planned, "elapsed_seconds": elapsed, "round": round_now,
+        "cells_done": done_count, "cells_total": planned, "elapsed_seconds": elapsed, "round": round_now, "scorecard": score,
         "seconds_per_cell": seconds_per_cell, "classes": classes,
         "tokens": token_totals(feed_path(source)),
         "current_cell": feed[-1]["cell"] if feed else None,

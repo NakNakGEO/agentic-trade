@@ -35,6 +35,12 @@
   <p class="note" style="margin-top:8px">A call is the AI's answer for one pair: buy, sell or hold. Each pair is handled by a team of 11 AI agents, one after another: three analysts (prices, news, company and economy data), a bull and a bear researcher, a research manager, a trader, three risk reviewers, and a portfolio manager who writes the call. Each square is one agent: green has finished, blue is working now. <span id="roundHow"></span> Hover a square for the agent's name.</p>
 </div>
 
+<div class="card" id="scorecard" style="display:none">
+  <h2>Scorecard: are the calls right? <span id="scoreNote" class="plain"></span></h2>
+  <div class="scroll"><table id="scoreTable"></table></div>
+  <p class="note" style="margin-top:8px">Each call is graded a set time after it landed, by what the recorded price did, ignoring our stops and targets: a Buy is right if the price rose, a Sell if it fell (a move under 0.005% counts as no move and is left out). The three columns on the right grade simple guesses on the very same calls: selling every one, buying every one, and following TradingView's rating from the evening before. A coin flip is 50%. The model only adds something if it beats those. Under 30 graded calls is too few to judge.</p>
+</div>
+
 <div class="card">
   <h2>Live agent feed <span id="nowLine" class="plain"></span></h2>
   <div class="toolbar">

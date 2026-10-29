@@ -8,6 +8,7 @@ import {renderDecisions} from './decisions.js';
 import {renderPortfolio, updateLive} from './portfolio.js';
 import {renderBlotter, updateBlotterLive} from './blotter.js';
 import {renderRound} from './round.js';
+import {renderScorecard} from './scorecard.js';
 import {startMarket, onQuotes} from './market.js';
 import {renderPicker, reload as reloadChart} from './tradechart.js';
 import {showTradingView} from './tvwidget.js';
@@ -41,7 +42,7 @@ $('modePicker').value = mode;
 $('modePicker').addEventListener('change', e => { params.set('mode', e.target.value); location.search = params.toString(); });
 
 function showAll(d) {
-  renderTop(d); renderRound(d); renderFeed(d); renderSystem(d); renderDecisions(d); renderPortfolio(d); renderBlotter(d); renderPicker(d);
+  renderTop(d); renderRound(d); renderScorecard(d); renderFeed(d); renderSystem(d); renderDecisions(d); renderPortfolio(d); renderBlotter(d); renderPicker(d);
 }
 
 loadRuns().then(() => {

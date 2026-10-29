@@ -58,7 +58,9 @@ def _parser() -> argparse.ArgumentParser:
     from paper_trade.bridge import cli as bridge_cli
     from paper_trade.live import cli as live_cli
     from paper_trade.live import watchdog
+    from paper_trade.scorecard import cli as scorecard_cli
 
+    scorecard_cli.add_arguments(sub)
     bridge_cli.add_arguments(sub)
     live_cli.add_arguments(sub)
     watchdog.add_arguments(sub)
@@ -96,6 +98,11 @@ def main(argv: list[str] | None = None) -> int:
         from paper_trade.live import cli as live_cli
 
         return live_cli.run(args)
+
+    if args.command == "scorecard":
+        from paper_trade.scorecard import cli as scorecard_cli
+
+        return scorecard_cli.run(args)
 
     if args.command == "watchdog":
         from paper_trade.live import watchdog

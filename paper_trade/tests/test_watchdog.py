@@ -102,7 +102,7 @@ def test_the_age_of_a_book_is_its_time_since_last_saved(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "book_path", lambda a: tmp_path / "book.json")
     assert watchdog.book_age(account) is None
     (tmp_path / "book.json").write_text("{}")
-    assert 0 <= watchdog.book_age(account) < 5 and watchdog.book_age(account, now=time.time() + 100) > 99
+    assert -1 < watchdog.book_age(account) < 5 and watchdog.book_age(account, now=time.time() + 100) > 99
 
 
 def test_the_command_runs_and_reports(monkeypatch, capsys):

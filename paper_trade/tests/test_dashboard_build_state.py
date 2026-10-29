@@ -109,3 +109,11 @@ def test_the_chart_and_candle_routes_pick_the_live_view_for_a_live_account(monke
     assert routes.candles_for("x", {}) == {"symbols": ["symbols"]}
     assert routes.candles_for("x", {"ticker": ["BTC-USD"], "tf": ["4h"]}) == {"chart": "BTC-USD", "tf": "4h"}
     assert routes.mode_of({"mode": ["long_only"]}) == "long_only" and routes.mode_of({"mode": ["nope"]}) == config.DEFAULT_MODE
+
+
+def test_the_scorecard_is_in_the_state_and_a_failure_in_it_never_blanks_the_page(folders, monkeypatch):
+    from paper_trade import scorecard
+    monkeypatch.setattr(scorecard, "for_account", lambda account: {"model": account.label, "calls": 3, "horizons": {}})
+    assert state.build_state("live_gemma_short")["scorecard"] == {"model": "short-term Gemma", "calls": 3, "horizons": {}}
+    monkeypatch.setattr(scorecard, "for_account", lambda account: 1 / 0)
+    assert state.build_state("live_gemma_short")["scorecard"] is None
