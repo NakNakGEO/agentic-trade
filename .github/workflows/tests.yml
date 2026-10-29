@@ -1,0 +1,33 @@
+name: tests
+
+# Runs the whole suite on every push to the working branches and on pull requests into the approved ones.
+# Nothing here uses a key, a model or the network beyond installing packages: the tests run on stand-in data.
+on:
+  push:
+    branches: [test, qa, main]
+  pull_request:
+    branches: [qa, main, prod]
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install the framework and the test tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ./TradingAgents pytest pytest-subtests coverage
+      - name: Run the suite
+        run: python -m coverage run --source=paper_trade -m pytest paper_trade/tests -q
+      - name: Coverage
+        run: python -m coverage report | Select-Object -Last 3
