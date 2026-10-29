@@ -179,6 +179,14 @@ def parse_store(lines) -> pd.DataFrame:
 _parsed: dict = {}
 
 
+def all_candles(ticker: str) -> pd.DataFrame:
+    """Every recorded M1 candle of ``ticker``, however old (for replays; ``candles`` keeps only the latest two days)."""
+    path = _store(ticker)
+    if not path.exists():
+        raise ValueError(f"no TradingView candles recorded for {ticker} yet")
+    return parse_store(path.read_text(encoding="utf-8").splitlines())
+
+
 def candles(ticker: str) -> pd.DataFrame:
     """The recorded M1 candles of ``ticker`` (re-read only when its file has grown)."""
     path = _store(ticker)
