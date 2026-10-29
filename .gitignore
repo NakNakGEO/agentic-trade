@@ -27,3 +27,8 @@ start-freellmapi.ps1
 # --- scratch ---
 *.bak
 *.tmp
+
+# --- test tooling (installed only in the test copy) ---
+.tools/
+.coverage
+htmlcov/
