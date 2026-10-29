@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from paper_trade import assets, config
 from paper_trade.live import book as livebook
-from paper_trade.live import feeds, keys, schedule, settings
+from paper_trade.live import feeds, keys, plan, schedule, settings
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -38,7 +38,7 @@ def new_decisions(book: livebook.Book, account: settings.Account) -> list:
         for d in decisions:
             key = f"{d.ticker}|{d.date}|{slot}" if slot else f"{d.ticker}|{d.date}"
             if key not in done and assets.canonical(d.ticker) in mine:
-                out.append(SimpleNamespace(ticker=d.ticker, date=d.date, rating=d.rating, slot=slot, key=key))
+                out.append(SimpleNamespace(ticker=d.ticker, date=d.date, rating=d.rating, slot=slot, key=key, run=run))
     return sorted(out, key=lambda d: (d.date, d.slot))
 
 
@@ -66,8 +66,9 @@ def update(book: livebook.Book, account: settings.Account, now: datetime | None 
         average_range = feeds.hourly_range(decision.ticker) if hourly else feeds.daily_range(decision.ticker)
         if hourly and average_range is None:    # no hourly range right now, so no stop can be placed: try again next cycle
             continue
+        tweaks = plan.tweaks_for(account.plan_options, decision.run, decision.ticker, decision.date, decision.rating)
         livebook.apply_decision(book, decision.ticker, decision.date, decision.rating, price,
-                                [] if hourly else feeds.daily_bars(decision.ticker), stamp, prices, average_range, account.style, decision.slot)
+                                [] if hourly else feeds.daily_bars(decision.ticker), stamp, prices, average_range, account.style, decision.slot, tweaks)
     for ticker in list(book.positions):
         livebook.step(book, ticker, feeds.intraday_bars(ticker))
     value = livebook.record(book, prices, stamp)

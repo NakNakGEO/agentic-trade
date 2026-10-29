@@ -40,6 +40,17 @@ STAGGER_SECONDS = 25                        # gap between the parallel decision 
 
 HISTORY_KEEP = 20_000                       # equity points kept in the book
 
+# Optional uses of the agent's full answer, switched on per account (AGENTIC_PLAN_<ACCOUNT NAME>=levels,wait,mild; see plan.py).
+PLAN_LEVELS, PLAN_WAIT, PLAN_MILD = "levels", "wait", "mild"
+PLAN_OPTIONS = (PLAN_LEVELS, PLAN_WAIT, PLAN_MILD)
+PLAN_STOP_MIN = 0.5                         # the agent's stop is used only when its distance is within this many ...
+PLAN_STOP_MAX = 3.0                         # ... to this many of the account's own stop distances (else the own stop is kept)
+MILD_SIZE = 0.75                            # Overweight / Underweight trade this share of the usual size
+MILD_RATINGS = ("Overweight", "Underweight")
+# A call that puts a condition on entering ("do not enter until", "wait for", "stand aside" ...) in its summary line.
+WAIT_PATTERN = (r"do not (?:enter|initiate|open|add)|don't (?:enter|initiate|open)|wait (?:for|until|one|a|to)|hold off|stand aside|"
+                r"no new (?:short|long)|avoid (?:entering|initiating|new)|defer(?:red)? (?:the )?entry|enter only (?:after|if|once)")
+
 
 LOT_STEP = 0.01                             # lots come in this step, and this is the smallest trade
 MAX_LOT = 1.0
@@ -76,6 +87,7 @@ class Account:
     decisions_run_id: str | None = None     # the run folder its decisions are written to and read from (default: run_id)
     call_every_minutes: int | None = None   # None: one round of calls a day (the old behaviour); else a round on this clock grid
     api_key_env: str | None = None          # the key variable of an online model; further keys are NAME_2, NAME_3 ... (see keys.py)
+    plan_options: tuple[str, ...] = ()      # which parts of the agent's full answer the account uses (PLAN_OPTIONS); none: the rating only
 
     @property
     def decisions_run(self) -> str:
@@ -96,12 +108,18 @@ ACCOUNTS = {
 
 
 def apply_overrides(accounts: dict, environ) -> dict:
-    """The accounts with any call interval set from the environment: AGENTIC_CALL_EVERY_<ACCOUNT NAME>=<minutes> (0 or empty
-    switches it off). This is how the call schedule is turned on, and off again, without changing any code."""
+    """The accounts with switches set from the environment, so a part can be turned on, and off again, without changing code:
+    AGENTIC_CALL_EVERY_<ACCOUNT NAME>=<minutes> (0 or empty switches it off) and AGENTIC_PLAN_<ACCOUNT NAME>=levels,wait,mild
+    (any of the PLAN_OPTIONS; anything else is ignored)."""
     out = {}
     for name, account in accounts.items():
         value = (environ.get(f"AGENTIC_CALL_EVERY_{name.upper()}") or "").strip()
-        out[name] = dataclasses.replace(account, call_every_minutes=int(value) or None) if value.isdigit() else account
+        if value.isdigit():
+            account = dataclasses.replace(account, call_every_minutes=int(value) or None)
+        chosen = (environ.get(f"AGENTIC_PLAN_{name.upper()}") or "").replace(" ", "").lower().split(",")
+        if any(option in PLAN_OPTIONS for option in chosen):
+            account = dataclasses.replace(account, plan_options=tuple(o for o in PLAN_OPTIONS if o in chosen))
+        out[name] = account
     return out
 
 

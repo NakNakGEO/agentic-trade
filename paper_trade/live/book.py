@@ -35,6 +35,15 @@ class Position:
     cost: float             # fee paid on entry
     lot: float | None = None    # None: the fixed lot
     deadline: str = ""      # ISO time, UTC: close at the market then (empty: no time limit)
+    note: str = ""          # how the trade differs from the usual rules ("agent stop", "mild size"), empty for the usual
+
+
+@dataclass(frozen=True)
+class Tweaks:
+    """What an account may take from the agent's full answer beyond its rating (see plan.py). Empty = the usual rules."""
+    stop: float | None = None   # the stop level the agent asked for, used when it is sane
+    scale: float = 1.0          # share of the usual size
+    hold: str = ""              # the agent said to wait for a condition: why this call does not trade now
 
 
 @dataclass
@@ -76,13 +85,13 @@ def _fee(ticker: str, price: float, lot: float | None = None) -> float:
     return qty(ticker, price, lot) * price * rate
 
 
-def lot_for(style: settings.Style, ticker: str, price: float, distance: float, account_value: float) -> float | None:
-    """Lots that lose about ``style.risk_fraction`` of the account at the stop, rounded down to the lot step but never
-    below the smallest trade. None means the fixed lot (no risk sizing, or a pair that keeps the fixed lot)."""
+def lot_for(style: settings.Style, ticker: str, price: float, distance: float, account_value: float, scale: float = 1.0) -> float | None:
+    """Lots that lose about ``style.risk_fraction`` (times ``scale``) of the account at the stop, rounded down to the lot step
+    but never below the smallest trade. None means the fixed lot (no risk sizing, or a pair that keeps the fixed lot)."""
     if style.risk_fraction is None or assets.canonical(ticker) in {assets.canonical(t) for t in style.fixed_lot_tickers}:
         return None
     per_lot = distance * qty(ticker, price, 1.0)
-    steps = math.floor(style.risk_fraction * account_value / per_lot / settings.LOT_STEP + 1e-9) if per_lot > 0 else 1
+    steps = math.floor(style.risk_fraction * scale * account_value / per_lot / settings.LOT_STEP + 1e-9) if per_lot > 0 else 1
     return round(min(max(steps, 1) * settings.LOT_STEP, settings.MAX_LOT), 8)
 
 
@@ -118,10 +127,11 @@ def _close(book: Book, pos: Position, price: float, when: str, reason: str) -> N
 
 def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float, daily_bars: list,
                    when: str, prices: dict[str, float | None], average_range: float | None = None,
-                   style: settings.Style = settings.DAILY, slot: str = "") -> None:
+                   style: settings.Style = settings.DAILY, slot: str = "", tweaks: Tweaks | None = None) -> None:
     """Act on one new decision at the live ``price``. Every decision is acted on once, whatever came of it.
 
-    ``average_range`` is the 14-bar range the stop is measured in (the daily one unless the style says otherwise)."""
+    ``average_range`` is the 14-bar range the stop is measured in (the daily one unless the style says otherwise).
+    ``tweaks`` carries what an account chose to take from the agent's full answer (none: the usual rules)."""
     key = f"{ticker}|{date}|{slot}" if slot else f"{ticker}|{date}"      # a round of calls adds its slot: one pair can have several a day
     if key in book.applied:
         return
@@ -136,14 +146,23 @@ def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float
     def skip(why: str) -> None:
         book.skipped.append({"ticker": ticker, "date": date, "rating": rating, "why": why})
 
+    tweaks = tweaks or Tweaks()
+    if tweaks.hold:                                      # the agent put a condition on this call: nothing changes now
+        return skip(f"the agent said to wait: {tweaks.hold}")
     if held:
         _close(book, held, price, when, "New call")
     average_range = average_range or sizing.atr(daily_bars)
     if average_range is None:
         return skip("not enough price history to place a stop")
-    distance = average_range * (style.stop_mult or rules.ATR_STOP_MULT)
+    distance, notes = average_range * (style.stop_mult or rules.ATR_STOP_MULT), []
+    planned = side * (price - tweaks.stop) if tweaks.stop is not None else 0.0      # how far below (long) or above (short) the price the agent put it
+    if settings.PLAN_STOP_MIN * distance <= planned <= settings.PLAN_STOP_MAX * distance:
+        distance = planned
+        notes.append("agent stop")
     now_equity = equity(book, prices)
-    lot = lot_for(style, ticker, price, distance, now_equity)
+    lot = lot_for(style, ticker, price, distance, now_equity, tweaks.scale)
+    if tweaks.scale != 1.0 and lot is not None:          # a fixed-lot pair (gold) cannot get smaller
+        notes.append("mild size")
     risk = distance * qty(ticker, price, lot)
     open_risk = sum(p.risk for p in book.positions.values())
     if now_equity <= 0 or open_risk + risk > rules.FIXED_LOT_MAX_TOTAL_RISK * now_equity:
@@ -153,7 +172,7 @@ def apply_decision(book: Book, ticker: str, date: str, rating: str, price: float
     deadline = (datetime.fromisoformat(when) + timedelta(hours=style.max_hours)).isoformat(timespec="seconds") if style.max_hours else ""
     book.positions[ticker] = Position(ticker, side, price, price - side * distance,
                                       price + side * distance * (style.reward_risk or rules.REWARD_RISK), when, date, rating,
-                                      risk, fee, lot, deadline)
+                                      risk, fee, lot, deadline, ", ".join(notes))
 
 
 def _utc(stamp: str) -> pd.Timestamp:
