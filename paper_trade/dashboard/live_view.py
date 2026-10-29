@@ -44,7 +44,7 @@ def _minute(stamp: str) -> str:
 def _sleeve(book: lb.Book, ticker: str, slice_cash: float, equity_now: float, price: float | None,
             stamp: pd.Timestamp) -> SleeveResult:
     closed = [c for c in book.closed if c.ticker == ticker]
-    pos = book.positions.get(ticker)
+    open_trades = lb.held(book, ticker)
     trades = []
     for c in closed:
         side = "long" if c.side > 0 else "short"
@@ -52,19 +52,19 @@ def _sleeve(book: lb.Book, ticker: str, slice_cash: float, equity_now: float, pr
                             c.entry, 0.0, opens=side))
         trades.append(Trade(ticker, c.decision_date, _minute(c.closed_at), c.reason, -c.side * lb.qty(ticker, c.exit, c.lot),
                             c.exit, 0.0, c.pnl, _minute(c.opened_at), c.entry, side, None))
-    pnl, shares, basis, last = sum(c.pnl for c in closed), 0.0, 0.0, price or 0.0
-    if pos:
-        last = price or pos.entry
-        shares = pos.side * lb.qty(ticker, last, pos.lot)
-        basis = shares * pos.entry
-        pnl += shares * last - basis - pos.cost
-        trades.append(Trade(ticker, pos.decision_date, _minute(pos.opened_at), pos.rating, shares, pos.entry, pos.cost,
+    pnl, shares, basis, last = sum(c.pnl for c in closed), 0.0, 0.0, price or (open_trades[0].entry if open_trades else 0.0)
+    for pos in open_trades:                              # several open trades add up: long and short trades on a pair offset each other
+        held_shares = pos.side * lb.qty(ticker, last, pos.lot)
+        shares += held_shares
+        basis += held_shares * pos.entry
+        pnl += held_shares * last - held_shares * pos.entry - pos.cost
+        trades.append(Trade(ticker, pos.decision_date, _minute(pos.opened_at), pos.rating, held_shares, pos.entry, pos.cost,
                             opens="long" if pos.side > 0 else "short"))
     value = slice_cash + pnl
     exposure = shares * last / equity_now if equity_now else 0.0
     return SleeveResult(ticker, pd.Series([value], index=[stamp]), pd.Series([exposure], index=[stamp]), trades,
                         shares=shares, cash=value - shares * last, basis=basis,
-                        open_date=_minute(pos.opened_at) if pos else None, last_price=last)
+                        open_date=_minute(open_trades[0].opened_at) if open_trades else None, last_price=last)
 
 
 def build_result(book: lb.Book, prices: dict[str, float | None], start_prices: dict[str, float | None],
@@ -136,7 +136,7 @@ def skipped_for(account: settings.Account) -> dict:
     book = lb.load(settings.book_path(account))
     limit = rules.FIXED_LOT_MAX_TOTAL_RISK * (book.history[-1]["equity"] if book.history else book.start_cash)
     return {s["ticker"]: {"date": s["date"], "rating": s["rating"], "why": plain_skip(s["why"], limit)} for s in book.skipped
-            if s["ticker"] not in book.positions}
+            if not lb.held(book, s["ticker"])}
 
 
 def style_note(account: settings.Account | None) -> str | None:
@@ -157,20 +157,34 @@ def style_note(account: settings.Account | None) -> str | None:
 
 
 def blotter_for(account: settings.Account) -> dict:
-    """The account's open trades, orders and finished trades in TradingView's panel layout (see blotter.py)."""
+    """The account's open trades, orders and finished trades in TradingView's panel layout (see blotter.py), plus how much
+    money is at risk in the open trades right now."""
     from paper_trade.dashboard import blotter
 
-    return blotter.build(lb.load(settings.book_path(account)), feeds.latest_prices(account.tickers))
+    book, prices = lb.load(settings.book_path(account)), feeds.latest_prices(account.tickers)
+    value, at_risk = lb.equity(book, prices), sum(p.risk for p in book.positions.values())
+    return {**blotter.build(book, prices),
+            "risk": {"open": round(at_risk, 2), "account": round(value, 2), "share": round(at_risk / value, 4) if value > 0 else None,
+                     "cap": account.risk_cap, "trades": len(book.positions)}}
 
 
 def levels_for(account: settings.Account) -> dict:
-    """{ticker: {stop, target}} for each trade the account holds now, so the portfolio table can show where it will exit."""
+    """{ticker: {stop, target, ...}} for the trades the account holds on each pair, so the portfolio table can show where
+    they will exit. A pair with several trades shows no single stop or target: the totals, and how many trades."""
     book = lb.load(settings.book_path(account))
     out = {}
-    for t, p in book.positions.items():
-        win, lose = lb.outcomes(p)
-        out[t] = {"stop": p.stop, "target": p.target, "lot": p.lot, "deadline": p.deadline,
-                  "win": round(win, 2), "lose": round(lose, 2)}
+    for ticker in dict.fromkeys(p.ticker for p in book.positions.values()):
+        trades = lb.held(book, ticker)
+        results = [lb.outcomes(p) for p in trades]
+        win, lose = round(sum(r[0] for r in results), 2), round(sum(r[1] for r in results), 2)
+        deadline = min((p.deadline for p in trades if p.deadline), default="")
+        if len(trades) == 1:
+            p = trades[0]
+            out[ticker] = {"stop": p.stop, "target": p.target, "lot": p.lot, "deadline": deadline, "win": win, "lose": lose}
+        else:
+            lots = [p.lot for p in trades]
+            out[ticker] = {"stop": None, "target": None, "lot": None if None in lots else round(sum(lots), 8),
+                           "deadline": deadline, "win": win, "lose": lose, "trades": len(trades)}
     return out
 
 
@@ -213,8 +227,9 @@ def live_chart(account: settings.Account, ticker: str) -> dict:
                        "value": round(abs(t.shares) * t.price, 4), "pnl": None if t.pnl is None else round(t.pnl, 4),
                        "entry_date": t.entry_date, "entry_price": None if t.entry_price is None else round(t.entry_price, 5),
                        "closes": t.closes, "opens": t.opens})
-    pos = book.positions.get(ticker)
-    exposure = [[label, (1.0 if pos.side > 0 else -1.0)] for label in labels if pos and label >= _minute(pos.opened_at)]
+    trades_open = lb.held(book, ticker)
+    net = sum(p.side for p in trades_open)               # long and short trades offset each other
+    exposure = [[label, (1.0 if net > 0 else -1.0)] for label in labels if net and label >= _minute(trades_open[0].opened_at)]
     return {"ticker": ticker, "class": assets.asset_class(ticker), "start": labels[0],
             "bars": [[label, round(float(r.Open), 5), round(float(r.High), 5), round(float(r.Low), 5),
                       round(float(r.Close), 5)] for label, (_, r) in zip(labels, bars.iterrows())],

@@ -57,11 +57,16 @@ function history(rows) {
   return rows.length ? table : el('div', {class: 'empty'}, 'No trade has finished yet.');
 }
 
+// How much money the open trades could lose if every stop were hit, and whether the account has a cap on that.
+const riskLine = r => !r ? [] : [el('div', {class: 'empty', title: 'The sum of what each open trade loses if it reaches its stop loss, before fees.'},
+  `Open risk: ${money(r.open)} in ${r.trades} trade${r.trades === 1 ? '' : 's'}` + (r.share != null ? ` (${(r.share * 100).toFixed(1)}% of the account)` : '') + ' · ' +
+  (r.cap == null ? 'no risk cap: the account can lose everything' : `risk cap ${Math.round(r.cap * 100)}% of the account`))];
+
 function draw() {
   if (!$('blotter')) return;
   const tabs = el('div', {class: 'tabs'}, ...TABS.map(([key, label]) => el('button', {class: 'pill' + (key === tab ? ' on' : ''), 'data-tab': key}, `${label} ${data[key].length}`)));
   const body = tab === 'positions' ? positions(data.positions) : tab === 'orders' ? orders(data.orders) : history(data.history);
-  $('blotterTabs').replaceChildren(tabs); $('blotterBody').replaceChildren(el('div', {class: 'scroll'}, body));
+  $('blotterTabs').replaceChildren(tabs); $('blotterBody').replaceChildren(...riskLine(data.risk), el('div', {class: 'scroll'}, body));
   updateBlotterLive();
 }
 

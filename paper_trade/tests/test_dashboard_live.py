@@ -80,7 +80,7 @@ def test_only_calls_without_an_open_trade_are_listed_as_not_opened(monkeypatch):
     book.history = [{"t": NOW, "equity": 100.0}]
     book.skipped = [{"ticker": "XAUUSD", "date": "2026-10-28", "rating": "Sell", "why": "open-risk cap: this trade risks $143.20 with $0.00 already at risk"},
                     {"ticker": "EURUSD", "date": "2026-10-28", "rating": "Sell", "why": "open-risk cap: this trade risks $9.00 with $45.00 already at risk"}]
-    book.positions = {"EURUSD": object()}                    # EURUSD opened later: no longer "not opened"
+    book.positions = {"EURUSD#2": lb.Position("EURUSD", -1, 1.1, 1.1015, 1.097, NOW, "2026-10-28", "Sell", 1.5, 0.1, 0.01)}   # opened later (a second trade on the pair): no longer "not opened"
     monkeypatch.setattr(live_view.lb, "load", lambda path: book)
     monkeypatch.setattr(rules, "FIXED_LOT_MAX_TOTAL_RISK", 0.5)        # the real limit: half the account
     out = live_view.skipped_for(live_view.settings.ACCOUNTS["gemma_short"])

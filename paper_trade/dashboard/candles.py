@@ -71,9 +71,9 @@ def _account_marks(ticker: str, price: float | None) -> tuple[list, list]:
     wanted, positions, trades = assets.canonical(ticker), [], []
     for account in settings.ACCOUNTS.values():
         book = lb.load(settings.book_path(account))
-        for held_ticker, pos in book.positions.items():
-            if assets.canonical(held_ticker) == wanted:
-                pnl = pos.side * lb.qty(held_ticker, price, pos.lot) * (price - pos.entry) - pos.cost if price else None
+        for pos in book.positions.values():              # a pair can hold several trades: the key is not the ticker
+            if assets.canonical(pos.ticker) == wanted:
+                pnl = pos.side * lb.qty(pos.ticker, price, pos.lot) * (price - pos.entry) - pos.cost if price else None
                 positions.append({"account": account.label, "side": "long" if pos.side > 0 else "short",
                                   "entry": pos.entry, "stop": pos.stop, "target": pos.target, "risk": pos.risk,
                                   "pnl": None if pnl is None else round(pnl, 2),

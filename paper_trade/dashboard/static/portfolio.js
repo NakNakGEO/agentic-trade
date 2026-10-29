@@ -86,7 +86,8 @@ function assetTable(p, d) {
   t.append(el('tr', {}, ...heads.map(([h, tip], i) => el('th', {class: i > 1 ? 'n' : '', title: tip || ''}, h))));
   p.tickers.forEach(r => t.append(el('tr', {}, el('td', {}, r.ticker), el('td', {class: 'empty'}, r.class),
     el('td', {class: 'n ' + cls(r.strategy)}, money(r.strategy, true)), el('td', {class: 'n ' + cls(r.hold)}, money(r.hold, true)),
-    el('td', {class: 'n', title: ((d.skipped || {})[r.ticker] || {}).why || ''}, side(r.exposure, d, r.ticker, r.lot)),
+    el('td', {class: 'n', title: ((d.skipped || {})[r.ticker] || {}).why || ''}, side(r.exposure, d, r.ticker, r.lot),
+      ...(r.trades > 1 ? [el('div', {class: 'empty'}, r.trades + ' trades (see Positions below)')] : [])),
     ...(levels ? [el('td', {class: 'n'}, r.open ? level(r.open_entry_price) : '-'),
       el('td', {class: 'n', 'data-price': r.symbol}, level(r.last_price)),
       el('td', {class: 'n bad'}, r.open ? level(r.stop) : '-'), el('td', {class: 'n good'}, r.open ? level(r.target) : '-'),

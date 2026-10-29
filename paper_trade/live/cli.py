@@ -21,10 +21,12 @@ def status_text(book: livebook.Book) -> str:
     last = book.history[-1]["equity"] if book.history else book.start_cash
     lines = [f"Live paper account: ${last:,.2f} (started with ${book.start_cash:,.2f} on {book.created or 'not started'})",
              f"Decisions acted on: {len(book.applied)}; trades skipped: {len(book.skipped)}", ""]
-    lines += [f"HOLDING {'BUY' if p.side > 0 else 'SELL'} {t} since {p.opened_at} at {p.entry:g}, "
+    lines += [f"HOLDING {'BUY' if p.side > 0 else 'SELL'} {p.ticker} since {p.opened_at} at {p.entry:g}, "
               f"stop {p.stop:g}, target {p.target:g}" + (f", {p.lot:g} lot" if p.lot else "")
               + (f", closes at the latest {p.deadline}" if p.deadline else "")
-              for t, p in book.positions.items()] or ["No position is open."]
+              for p in book.positions.values()] or ["No position is open."]
+    if book.positions:
+        lines.append(f"Open risk: ${sum(p.risk for p in book.positions.values()):,.2f} in {len(book.positions)} trade(s)")
     lines += [f"{c.reason}: {'BUY' if c.side > 0 else 'SELL'} {c.ticker} {c.entry:g} -> {c.exit:g}, {c.pnl:+.2f}"
               for c in book.closed]
     lines += [f"Skipped {s['ticker']} {s['date']} ({s['rating']}): {s['why']}" for s in book.skipped]
