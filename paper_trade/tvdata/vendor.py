@@ -15,7 +15,7 @@ import pandas as pd
 from paper_trade import daybook
 from paper_trade.assets import canonical
 from paper_trade.live import settings as live
-from paper_trade.tvdata import client
+from paper_trade.tvdata import candles, client, desk
 
 TIMEFRAMES = {"1h": "1 hour", "4h": "4 hours", "1d": "1 day", "1W": "1 week"}
 # framework indicator name -> (TradingView field, what it is)
@@ -90,9 +90,22 @@ def get_stock_data(symbol: str, start_date: str, end_date: str) -> str:
                 if bar:
                     lines.append(f"| {label} | {_fmt(bar.get('open'))} | {_fmt(bar.get('high'))} | {_fmt(bar.get('low'))} | "
                                  f"{_fmt(bar.get('close'))} | {bar.get('change', 0):+.3f} |")
+    if desk.short_account() is not None and is_live(end_date):      # a short-term account also sees the hours
+        lines += candles.tables(_minute_candles(symbol))
     if len(lines) == 2:
         return f"NO_DATA_AVAILABLE: no recorded or live prices for {symbol} on {start_date} to {end_date}. {lines[1]}"
     return "\n".join(lines)
+
+
+def _minute_candles(symbol: str) -> pd.DataFrame | None:
+    """This system's recorded minute candles of ``symbol`` (None when there are none yet)."""
+    from paper_trade.live import tradingview
+
+    ticker = _live_ticker(symbol)
+    try:
+        return tradingview.candles(ticker) if ticker else None
+    except Exception:                    # nothing recorded yet: the daily and live tables still answer
+        return None
 
 
 def _value(values: dict, field: str):
