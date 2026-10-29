@@ -74,18 +74,19 @@ def round_state(run_id: str, tickers, started: datetime | None, now: datetime) -
     return "running" if now.timestamp() - newest < STALL_SECONDS else "over"
 
 
-def busy(account: settings.Account, last_slot: datetime | None, now: datetime) -> bool:
-    """Is this account's latest round still working?"""
+def busy(account: settings.Account, last_slot: datetime | None, now: datetime, last_started: datetime | None = None) -> bool:
+    """Is this account's latest round still working? ``last_started`` is when that round actually began (it can be later than
+    its slot time when the round had to wait for the one before it); without it the slot time is used."""
     if last_slot is None:
         return False
-    return round_state(slot_run_id(account.decisions_run, last_slot), account.tickers, last_slot, now) == "running"
+    return round_state(slot_run_id(account.decisions_run, last_slot), account.tickers, last_started or last_slot, now) == "running"
 
 
-def due(account: settings.Account, now: datetime, last_slot: datetime | None) -> datetime | None:
+def due(account: settings.Account, now: datetime, last_slot: datetime | None, last_started: datetime | None = None) -> datetime | None:
     """The slot to start now, or None: the newest grid time not yet served, and only when no round is still running."""
     if not account.call_every_minutes:
         return None
     slot = latest_slot(now, account.call_every_minutes)
     if last_slot is not None and slot <= last_slot:
         return None
-    return None if busy(account, last_slot, now) else slot
+    return None if busy(account, last_slot, now, last_started) else slot

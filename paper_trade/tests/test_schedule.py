@@ -64,6 +64,17 @@ def test_a_round_is_running_until_every_pair_has_a_call_or_its_work_stalls(folde
     assert schedule.round_state(run, tickers, started, now) == "over"                                      # both pairs have their call
 
 
+def test_a_round_that_started_late_gets_its_start_up_time_from_when_it_really_started(folders):
+    """Found by a real round: the grace was counted from the slot time, so a round that had waited was judged over at once."""
+    run, slot, began = "live_gemma_s202610291230", utc("2026-10-29T12:30"), utc("2026-10-29T13:28")
+    tickers = ["EURUSD"]
+    assert schedule.round_state(run, tickers, slot, began + timedelta(seconds=30)) == "over"                 # counted from the slot: wrong
+    assert schedule.round_state(run, tickers, began, began + timedelta(seconds=30)) == "running"             # counted from the real start
+    assert schedule.busy(GEMMA, slot, began + timedelta(seconds=30), began) is True
+    assert schedule.busy(GEMMA, slot, began + timedelta(minutes=15), began) is False
+    assert schedule.due(GEMMA, utc("2026-10-29T14:31"), slot, began) == utc("2026-10-29T14:30")             # an hour later the next slot starts
+
+
 def test_a_round_is_due_on_the_grid_never_while_the_last_one_works_and_then_only_the_newest_starts(folders, monkeypatch):
     assert schedule.due(DAILY, utc("2026-10-30T03:00"), None) is None                    # no interval: this module does nothing
     assert schedule.due(GEMMA, utc("2026-10-30T01:00"), None) == utc("2026-10-30T00:30")
@@ -85,7 +96,9 @@ def test_the_loop_follows_the_grid_and_a_round_goes_to_its_own_run_with_its_slot
     assert runner.decisions_due(GEMMA, utc("2026-10-30T00:29")) is True and runner._last_slot(GEMMA) is None   # 22:30 on the 29th is the newest slot
     runner.start_decisions(GEMMA, utc("2026-10-30T00:31"))
     assert started == [("2026-10-30", None, "live_gemma_s202610300030")]
-    assert json.loads((tmp_path / "state.json").read_text())["last_slot"] == "2026-10-30T00:30:00+00:00"
+    saved = json.loads((tmp_path / "state.json").read_text())
+    assert saved["last_slot"] == "2026-10-30T00:30:00+00:00" and saved["last_started"].startswith("2026-10-30T00:31")
+    assert runner._last_started(GEMMA) == utc("2026-10-30T00:31")
     assert runner.decisions_due(GEMMA, utc("2026-10-30T01:00")) is False and runner.decisions_due(GEMMA, utc("2026-10-30T02:30")) is True
 
 

@@ -98,11 +98,16 @@ def _last_slot(account: settings.Account) -> datetime | None:
     return datetime.fromisoformat(stamp) if stamp else None
 
 
+def _last_started(account: settings.Account) -> datetime | None:
+    stamp = _state(account).get("last_started")
+    return datetime.fromisoformat(stamp) if stamp else None
+
+
 def decisions_due(account: settings.Account, now: datetime) -> bool:
     """True when a round of calls should start now. An account with a call interval follows its clock grid (one round at a
     time, see schedule.py); any other account starts once per UTC day, after the day's decision time."""
     if account.call_every_minutes:
-        return schedule.due(account, now, _last_slot(account)) is not None
+        return schedule.due(account, now, _last_slot(account), _last_started(account)) is not None
     hour, minute = settings.DECISION_AFTER_UTC
     after = now.hour * 60 + now.minute >= hour * 60 + minute
     return after and _state(account).get("decisions_started") != now.strftime("%Y-%m-%d")
@@ -153,6 +158,7 @@ def start_decisions(account: settings.Account, now: datetime | None = None) -> N
     if account.call_every_minutes:                         # a round on the clock grid, in its own run folder
         slot = schedule.latest_slot(now, account.call_every_minutes)
         state["last_slot"], run_id, today = slot.isoformat(), schedule.slot_run_id(account.decisions_run, slot), slot.strftime("%Y-%m-%d")
+        state["last_started"] = now.isoformat()
     settings.state_path(account).parent.mkdir(parents=True, exist_ok=True)
     settings.state_path(account).write_text(json.dumps(state), encoding="utf-8")
     if not account.parallel:
