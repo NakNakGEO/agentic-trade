@@ -32,3 +32,4 @@ start-freellmapi.ps1
 .tools/
 .coverage
 htmlcov/
+.test_copy

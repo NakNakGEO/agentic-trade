@@ -13,6 +13,7 @@ LIVE_DATA_DIR = os.environ.get("AGENTIC_LIVE_DATA_DIR") or None
 READ_ONLY_DATA = LIVE_DATA_DIR is not None
 DATA_DIR = Path(LIVE_DATA_DIR) if READ_ONLY_DATA else RUNS_DIR
 ALLOW_TEST_ROUNDS = os.environ.get("AGENTIC_ALLOW_TEST_ROUNDS") == "1"     # a test copy only starts model calls when told to
+IS_TEST_COPY = (ROOT / ".test_copy").exists()                             # marker file in the test copy: it never starts live loops
 
 # Local Ollama model with a raised context window (see Modelfile notes in the README).
 LLM_SETTINGS = {

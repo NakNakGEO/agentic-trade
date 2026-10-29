@@ -57,9 +57,11 @@ def _parser() -> argparse.ArgumentParser:
 
     from paper_trade.bridge import cli as bridge_cli
     from paper_trade.live import cli as live_cli
+    from paper_trade.live import watchdog
 
     bridge_cli.add_arguments(sub)
     live_cli.add_arguments(sub)
+    watchdog.add_arguments(sub)
     return parser
 
 
@@ -94,6 +96,11 @@ def main(argv: list[str] | None = None) -> int:
         from paper_trade.live import cli as live_cli
 
         return live_cli.run(args)
+
+    if args.command == "watchdog":
+        from paper_trade.live import watchdog
+
+        return watchdog.run(args)
 
     if args.command == "bridge":
         from paper_trade.bridge import cli as bridge_cli
